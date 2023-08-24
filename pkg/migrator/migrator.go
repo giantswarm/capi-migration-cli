@@ -76,6 +76,16 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	// migrate cluster account role
+	err = s.migrateClusterAccountRole(ctx)
+	if err != nil {
+		fmt.Printf("Failed to migrate cluster account role.\n")
+		return microerror.Mask(err)
+	} else {
+		fmt.Printf("Successfully migrated cluster IAM account role to AWSClusterRoleIdentity.\n")
+	}
+	fmt.Printf("Preparation phase completed.\n")
+
 	return nil
 }
 
@@ -109,6 +119,20 @@ func (s *Service) migrateSecrets(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+	return nil
+}
+
+func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
+	/*	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
+		if err != nil {
+			return microerror.Mask(err)
+		}*/
 
 	return nil
 }

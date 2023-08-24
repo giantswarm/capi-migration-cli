@@ -137,5 +137,17 @@ func mainE(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	err = migratorService.GenerateCAPIClusterTemplates(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	/*
+		err = migratorService.MigrationPhaseStopVintageReconciliation(ctx)
+		if err != nil {
+			fmt.Printf("Failed to stop reconciliation on vintage cluster\n")
+			return microerror.Mask(err)
+		}*/
+
 	return nil
 }

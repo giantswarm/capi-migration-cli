@@ -180,3 +180,6 @@ func customFilesSecretName(clusterName string) string {
 func etcdEndpointFromDomain(domain string, clusterName string) string {
 	return fmt.Sprintf("etcd.%s.k8s.%s", clusterName, domain)
 }
+func apiEndpointFromDomain(domain string, clusterName string) string {
+	return fmt.Sprintf("api.%s.k8s.%s", clusterName, domain)
+}
