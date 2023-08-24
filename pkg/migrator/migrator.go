@@ -124,15 +124,15 @@ func (s *Service) migrateSecrets(ctx context.Context) error {
 }
 
 func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
-	/*	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
-		err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
-		if err != nil {
-			return microerror.Mask(err)
-		}*/
+	err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	return nil
 }
