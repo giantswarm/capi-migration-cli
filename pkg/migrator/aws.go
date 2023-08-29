@@ -57,24 +57,6 @@ func (s *Service) getWorkerSecurityGroupID(workerName string) (string, error) {
 	return *o.SecurityGroups[0].GroupId, nil
 }
 
-func (s *Service) getWorkerSubnets(workerName string) ([]*ec2.Subnet, error) {
-	i := &ec2.DescribeSubnetsInput{
-		Filters: []*ec2.Filter{
-			{
-				Name:   aws.String("tag:giantswarm.io/machine-deployment"),
-				Values: aws.StringSlice([]string{workerName}),
-			},
-		},
-	}
-
-	o, err := s.ec2Client.DescribeSubnets(i)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-
-	return o.Subnets, nil
-}
-
 func (s *Service) getInternetGatewayID() (string, error) {
 	i := &ec2.DescribeInternetGatewaysInput{
 		Filters: []*ec2.Filter{
