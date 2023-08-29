@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/giantswarm/apiextensions/v3/pkg/label"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
+	"github.com/giantswarm/apiextensions/v6/pkg/label"
 	"github.com/giantswarm/microerror"
 	v1 "k8s.io/api/core/v1"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
