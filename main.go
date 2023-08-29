@@ -97,7 +97,7 @@ func mainE(ctx context.Context) error {
 	var err error
 
 	if flags.Phase != "all" {
-		fmt.Printf(color.RedString("WARNING: flag '--phase=all' is only implemented for now.\n"))
+		color.Red("WARNING: flag '--phase=all' is only implemented for now.")
 	}
 
 	var configService *cluster.Cluster

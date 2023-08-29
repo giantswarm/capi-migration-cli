@@ -54,7 +54,7 @@ func New(c Config) (*Service, error) {
 
 func (s *Service) PrepareMigration(ctx context.Context) error {
 	var err error
-	fmt.Printf(color.YellowString("Preparation Phase\n"))
+	color.Yellow("Preparation Phase")
 	// fetch vintage CRs
 	fmt.Printf("Fetching vintage CRs\n")
 	s.vintageCRs, err = fetchVintageCRs(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.clusterInfo.Name)
@@ -90,7 +90,7 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 }
 
 func (s *Service) MigrationPhaseStopVintageReconciliation(ctx context.Context) error {
-	fmt.Printf(color.YellowString("Stopping reconciliation of Vintage CRs\n"))
+	color.Yellow("Stopping reconciliation of Vintage CRs")
 	if s.vintageCRs == nil {
 		return microerror.Maskf(executionFailedError, "vintage CRs cannot be nil")
 	}
@@ -124,15 +124,15 @@ func (s *Service) migrateSecrets(ctx context.Context) error {
 }
 
 func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
-	/*	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
-		err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
-		if err != nil {
-			return microerror.Mask(err)
-		}*/
+	err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	return nil
 }
