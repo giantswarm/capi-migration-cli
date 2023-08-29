@@ -147,6 +147,9 @@ func (s *Service) templateClusterAWS(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 		clusterConfigData, err := yaml.Marshal(data)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 
 		userConfigMap, err := templateapp.NewConfigMap(templateapp.UserConfig{
 			Name:      configMapName,

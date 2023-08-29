@@ -62,19 +62,19 @@ type ManagementCluster struct {
 }
 
 func New(c Config) (*Cluster, error) {
-	fmt.Printf(color.YellowString("Checking kubernetes client for Vintage MC %s\n", c.MCVintage))
+	color.Yellow("Checking kubernetes client for Vintage MC %s", c.MCVintage)
 	vintageKubernetesClient, err := loginOrReuseKubeconfig(c.MCVintage)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	fmt.Printf(color.YellowString("Checking kubernetes client for CAPI MC %s\n", c.MCCapi))
+	color.Yellow("Checking kubernetes client for CAPI MC %s", c.MCCapi)
 	capiKubernetesClient, err := loginOrReuseKubeconfig(c.MCCapi)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	fmt.Printf(color.YellowString("Generating AWS credentials for cluster  %s/%s\n", c.MCVintage, c.ClusterName))
+	color.Yellow("Generating AWS credentials for cluster  %s/%s", c.MCVintage, c.ClusterName)
 	var clusterRegion string
 	var awsSession *session.Session
 	{
@@ -100,7 +100,7 @@ func New(c Config) (*Cluster, error) {
 		fmt.Printf("Generated AWS credentials for %s\n", *identity.Arn)
 	}
 
-	fmt.Printf(color.YellowString("Checking %s's vault connection\n", c.MCVintage))
+	color.Yellow("Checking %s's vault connection", c.MCVintage)
 	var vaultClient *vaultapi.Client
 	{
 		addr, token, caPath, err := getVaultInfo(c.MCVintage)
@@ -130,7 +130,7 @@ func New(c Config) (*Cluster, error) {
 
 	}
 
-	fmt.Printf(color.GreenString("Init phase finished.\n\n"))
+	color.Green("Init phase finished.\n")
 
 	return &Cluster{
 		Name:      c.ClusterName,
@@ -194,6 +194,9 @@ func getK8sClientFromKubeconfig(contextName string) (client.Client, error) {
 		return nil, microerror.Mask(err)
 	}
 	v, err := clientset.ServerVersion()
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 	fmt.Printf("Connecned to %s, k8s server version %s\n", contextName, v.String())
 
 	ctrlClient, err := client.New(config, client.Options{Scheme: scheme})
