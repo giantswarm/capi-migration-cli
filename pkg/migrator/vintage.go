@@ -142,13 +142,11 @@ func stopVintageReconciliation(ctx context.Context, k8sClient client.Client, crs
 	}
 
 	// AWSMachineDeployment
-	for _, md := range crs.AwsMachineDeployments {
+	for i := range crs.AwsMachineDeployments {
+		md := crs.AwsMachineDeployments[i]
 		delete(md.Labels, label.AWSOperatorVersion)
 		md.Finalizers = nil
-
-		mdPointer := &md
-
-		err = k8sClient.Update(ctx, mdPointer)
+		err = k8sClient.Update(ctx, &md)
 		if err != nil {
 			return microerror.Mask(err)
 		}
