@@ -1,13 +1,14 @@
 package migrator
 
 import (
+	"context"
 	"fmt"
 
 	awsarn "github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/giantswarm/microerror"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	capa "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capa "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 )
 
 func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleARN string) error {

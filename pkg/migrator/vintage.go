@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/giantswarm/apiextensions/v3/pkg/label"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
+	"github.com/giantswarm/apiextensions/v6/pkg/label"
 	"github.com/giantswarm/microerror"
 	v1 "k8s.io/api/core/v1"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -55,7 +55,7 @@ func fetchVintageCRs(ctx context.Context, k8sClient client.Client, clusterName s
 
 func readCluster(ctx context.Context, k8sClient client.Client, clusterName string) (*capi.Cluster, error) {
 	objList := &capi.ClusterList{}
-	selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
+	selector := client.MatchingLabels{capi.ClusterLabelName: clusterName}
 	err := k8sClient.List(ctx, objList, selector)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -75,7 +75,7 @@ func readCluster(ctx context.Context, k8sClient client.Client, clusterName strin
 
 func readAWSCluster(ctx context.Context, k8sClient client.Client, clusterName string) (*giantswarmawsalpha3.AWSCluster, error) {
 	objList := &giantswarmawsalpha3.AWSClusterList{}
-	selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
+	selector := client.MatchingLabels{capi.ClusterLabelName: clusterName}
 	err := k8sClient.List(ctx, objList, selector)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -95,7 +95,7 @@ func readAWSCluster(ctx context.Context, k8sClient client.Client, clusterName st
 
 func readAwsControlPlane(ctx context.Context, k8sClient client.Client, clusterName string) (*giantswarmawsalpha3.AWSControlPlane, error) {
 	objList := &giantswarmawsalpha3.AWSControlPlaneList{}
-	selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
+	selector := client.MatchingLabels{capi.ClusterLabelName: clusterName}
 	err := k8sClient.List(ctx, objList, selector)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -115,7 +115,7 @@ func readAwsControlPlane(ctx context.Context, k8sClient client.Client, clusterNa
 
 func readAWSMachineDeployment(ctx context.Context, k8sClient client.Client, clusterName string) ([]giantswarmawsalpha3.AWSMachineDeployment, error) {
 	objList := &giantswarmawsalpha3.AWSMachineDeploymentList{}
-	selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
+	selector := client.MatchingLabels{capi.ClusterLabelName: clusterName}
 	err := k8sClient.List(ctx, objList, selector)
 	if err != nil {
 		return nil, microerror.Mask(err)

@@ -5,7 +5,6 @@ go 1.20
 require (
 	github.com/aws/aws-sdk-go v1.44.319
 	github.com/fatih/color v1.15.0
-	github.com/giantswarm/apiextensions/v3 v3.22.0
 	github.com/giantswarm/apiextensions/v6 v6.6.0
 	github.com/giantswarm/k8smetadata v0.21.0
 	github.com/giantswarm/kubectl-gs/v2 v2.41.0
@@ -16,9 +15,9 @@ require (
 	k8s.io/api v0.27.2
 	k8s.io/apimachinery v0.27.2
 	k8s.io/client-go v0.27.2
-	sigs.k8s.io/cluster-api v1.5.0
-	sigs.k8s.io/cluster-api-provider-aws/v2 v2.2.1
-	sigs.k8s.io/controller-runtime v0.15.0
+	sigs.k8s.io/cluster-api v1.1.5
+	sigs.k8s.io/cluster-api-provider-aws v1.5.5
+	sigs.k8s.io/controller-runtime v0.13.1
 	sigs.k8s.io/yaml v1.3.0
 )
 

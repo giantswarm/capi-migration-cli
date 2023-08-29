@@ -42,10 +42,10 @@ func New(c Config) (*Service, error) {
 		route53Client: route53.New(c.Config.AWSSession),
 		asgClient:     autoscaling.New(c.Config.AWSSession),
 		app: AppInfo{
-			ClusterAppVersion:  ClusterAppVersion,
 			ClusterAppCatalog:  ClusterAppCatalog,
-			DefaultAppsCatalog: DefaultAppsVersion,
-			DefaultAppsVersion: DefaultAppsCatalog,
+			ClusterAppVersion:  ClusterAppVersion,
+			DefaultAppsCatalog: DefaultAppsCatalog,
+			DefaultAppsVersion: DefaultAppsVersion,
 		},
 	}
 
