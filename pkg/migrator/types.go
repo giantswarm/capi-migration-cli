@@ -41,12 +41,13 @@ type File struct {
 }
 
 type NodePool struct {
-	AvailabilityZones []string            `yaml:"availabilityZones"`
-	InstanceType      string              `yaml:"instanceType"`
-	Min               int                 `yaml:"min"`
-	Max               int                 `yaml:"max"`
-	RootVolumeSizeGB  int                 `yaml:"rootVolumeSizeGB"`
-	SubnetTags        []map[string]string `yaml:"subnetTags"`
+	AdditionalSecurityGroupID string              `yaml:"additionalSecurityGroupID"`
+	AvailabilityZones         []string            `yaml:"availabilityZones"`
+	InstanceType              string              `yaml:"instanceType"`
+	Min                       int                 `yaml:"min"`
+	Max                       int                 `yaml:"max"`
+	RootVolumeSizeGB          int                 `yaml:"rootVolumeSizeGB"`
+	SubnetTags                []map[string]string `yaml:"subnetTags"`
 }
 
 type ProviderSpecific struct {

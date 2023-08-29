@@ -123,13 +123,19 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 
 	data.NodePools = make(map[string]NodePool)
 	for _, mp := range s.vintageCRs.AwsMachineDeployments {
+		id, err := s.getWorkerSecurityGroupID(mp.Name)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+
 		data.NodePools[mp.Name] = NodePool{
-			AvailabilityZones: mp.Spec.Provider.AvailabilityZones,
-			InstanceType:      mp.Spec.Provider.Worker.InstanceType,
-			Min:               mp.Spec.NodePool.Scaling.Min,
-			Max:               mp.Spec.NodePool.Scaling.Max,
-			RootVolumeSizeGB:  calculateRootVolumeSize(mp.Spec.NodePool.Machine.DockerVolumeSizeGB, mp.Spec.NodePool.Machine.KubeletVolumeSizeGB),
-			SubnetTags:        buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
+			AdditionalSecurityGroupID: id,
+			AvailabilityZones:         mp.Spec.Provider.AvailabilityZones,
+			InstanceType:              mp.Spec.Provider.Worker.InstanceType,
+			Min:                       mp.Spec.NodePool.Scaling.Min,
+			Max:                       mp.Spec.NodePool.Scaling.Max,
+			RootVolumeSizeGB:          calculateRootVolumeSize(mp.Spec.NodePool.Machine.DockerVolumeSizeGB, mp.Spec.NodePool.Machine.KubeletVolumeSizeGB),
+			SubnetTags:                buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
 		}
 	}
 
@@ -147,6 +153,9 @@ func (s *Service) templateClusterAWS(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 		clusterConfigData, err := yaml.Marshal(data)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 
 		userConfigMap, err := templateapp.NewConfigMap(templateapp.UserConfig{
 			Name:      configMapName,
