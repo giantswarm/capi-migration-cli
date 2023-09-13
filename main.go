@@ -142,12 +142,23 @@ func mainE(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	/*
-		err = migratorService.MigrationPhaseStopVintageReconciliation(ctx)
-		if err != nil {
-			fmt.Printf("Failed to stop reconciliation on vintage cluster\n")
-			return microerror.Mask(err)
-		}*/
+	// err = migratorService.MigrationPhaseStopVintageReconciliation(ctx)
+	// if err != nil {
+	//	fmt.Printf("Failed to stop reconciliation on vintage cluster\n")
+	//	return microerror.Mask(err)
+	// }
+
+	err = migratorService.MigrationPhaseProvisionCAPICluster(ctx)
+	if err != nil {
+		fmt.Printf("Failed to create CAPI cluster\n")
+		return microerror.Mask(err)
+	}
+
+	err = migratorService.MigrationPhaseCleanVintageCluster(ctx)
+	if err != nil {
+		fmt.Printf("Failed to clean vintage cluster\n")
+		return microerror.Mask(err)
+	}
 
 	return nil
 }

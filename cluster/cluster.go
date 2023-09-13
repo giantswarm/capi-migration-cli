@@ -44,9 +44,11 @@ type Config struct {
 }
 
 type Cluster struct {
-	Name      string
-	Namespace string
-	Region    string
+	Name                       string
+	Namespace                  string
+	Region                     string
+	KubernetesControllerClient client.Client
+	KubernetesClientSet        kubernetes.Interface
 
 	AWSSession *session.Session
 	MC         *ManagementCluster
@@ -63,13 +65,19 @@ type ManagementCluster struct {
 
 func New(c Config) (*Cluster, error) {
 	color.Yellow("Checking kubernetes client for Vintage MC %s", c.MCVintage)
-	vintageKubernetesClient, err := loginOrReuseKubeconfig(c.MCVintage)
+	vintageKubernetesClient, _, err := loginOrReuseKubeconfig([]string{c.MCVintage})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	color.Yellow("Checking kubernetes client for the cluster %s", c.ClusterName)
+	clusterKubernetesClient, clusterClientSet, err := loginOrReuseKubeconfig([]string{c.MCVintage, c.ClusterName})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
 	color.Yellow("Checking kubernetes client for CAPI MC %s", c.MCCapi)
-	capiKubernetesClient, err := loginOrReuseKubeconfig(c.MCCapi)
+	capiKubernetesClient, _, err := loginOrReuseKubeconfig([]string{c.MCCapi})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -130,12 +138,14 @@ func New(c Config) (*Cluster, error) {
 
 	}
 
-	color.Green("Init phase finished.\n")
+	color.Green("Init phase finished.\n\n")
 
 	return &Cluster{
-		Name:      c.ClusterName,
-		Namespace: c.ClusterNamespace,
-		Region:    clusterRegion,
+		Name:                       c.ClusterName,
+		Namespace:                  c.ClusterNamespace,
+		Region:                     clusterRegion,
+		KubernetesControllerClient: clusterKubernetesClient,
+		KubernetesClientSet:        clusterClientSet,
 
 		AWSSession: awsSession,
 		MC: &ManagementCluster{
@@ -148,33 +158,33 @@ func New(c Config) (*Cluster, error) {
 	}, nil
 }
 
-// LoginOrReuseKubeconfig will return k8s client for the specific MC installation, it will try if there is already existing context or login if its missing
-func loginOrReuseKubeconfig(installation string) (client.Client, error) {
-	k8s, err := getK8sClientFromKubeconfig(contextNameFromInstallation(installation))
+// LoginOrReuseKubeconfig will return k8s client for the specific wc or MC client, it will try if there is already existing context or login if its missing
+func loginOrReuseKubeconfig(cluster []string) (client.Client, kubernetes.Interface, error) {
+	ctrlClient, clientSet, err := getK8sClientFromKubeconfig(contextNameFromCluster(cluster))
 	if err != nil && strings.Contains(err.Error(), "does not exist") {
 		// login
-		fmt.Printf("Context for MC %s not found, executing 'opsctl login', check your browser window.\n", installation)
-		err = loginIntoMC(installation)
+		fmt.Printf("Context for cluster %s not found, executing 'opsctl login', check your browser window.\n", cluster)
+		err = loginIntoCLuster(cluster)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return nil, nil, microerror.Mask(err)
 		}
 		// now retry
-		k8s, err = getK8sClientFromKubeconfig(contextNameFromInstallation(installation))
+		ctrlClient, clientSet, err = getK8sClientFromKubeconfig(contextNameFromCluster(cluster))
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return nil, nil, microerror.Mask(err)
 		}
 	} else if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, nil, microerror.Mask(err)
 	}
-	return k8s, nil
+	return ctrlClient, clientSet, nil
 }
 
-func getK8sClientFromKubeconfig(contextName string) (client.Client, error) {
+func getK8sClientFromKubeconfig(contextName string) (client.Client, kubernetes.Interface, error) {
 	kubeconfigFile := os.Getenv("KUBECONFIG")
 	if kubeconfigFile == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return nil, nil, microerror.Mask(err)
 		}
 		kubeconfigFile = fmt.Sprintf("%s/.kube/config", home)
 	}
@@ -186,30 +196,31 @@ func getK8sClientFromKubeconfig(contextName string) (client.Client, error) {
 		}).ClientConfig()
 
 	if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, nil, microerror.Mask(err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, nil, microerror.Mask(err)
 	}
 	v, err := clientset.ServerVersion()
 	if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, nil, microerror.Mask(err)
 	}
 	fmt.Printf("Connecned to %s, k8s server version %s\n", contextName, v.String())
 
 	ctrlClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, nil, microerror.Mask(err)
 	}
 
-	return ctrlClient, nil
+	return ctrlClient, clientset, nil
 }
 
-// LoginIntoMC will login into MC by executing opsctl login command
-func loginIntoMC(installation string) error {
-	c := exec.Command("opsctl", "login", installation, "--no-cache")
+// LoginIntoCluster will login into cluster by executing opsctl login command
+func loginIntoCLuster(cluster []string) error {
+	args := append([]string{"login", "--no-cache"}, cluster...)
+	c := exec.Command("opsctl", args...)
 
 	c.Stderr = os.Stderr
 	c.Stdin = os.Stdin
@@ -313,6 +324,10 @@ func getAWSCredentials(installation string, clusterName string) (*credentials.Cr
 	return creds, region, nil
 }
 
-func contextNameFromInstallation(installation string) string {
-	return fmt.Sprintf("gs-%s", installation)
+func contextNameFromCluster(cluster []string) string {
+	if len(cluster) == 1 {
+		return fmt.Sprintf("gs-%s", cluster[0])
+	} else {
+		return fmt.Sprintf("gs-%s-%s-clientcert", cluster[0], cluster[1])
+	}
 }

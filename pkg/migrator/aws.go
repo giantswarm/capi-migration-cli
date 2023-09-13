@@ -2,9 +2,13 @@ package migrator
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/fatih/color"
 	"github.com/giantswarm/microerror"
 )
 
@@ -172,4 +176,105 @@ func (s *Service) getSubnets(vpcID string) ([]Subnet, error) {
 	}
 
 	return subnets, nil
+}
+
+func (s *Service) addNewControlPlaneNodesToVintageELBs() error {
+	var instanceIDs []string
+
+	color.Yellow("Adding CAPI control plane nodes to vintage ELBs")
+
+	counter := 0
+	for {
+		// get instance IDS with tags
+		i := &ec2.DescribeInstancesInput{
+			Filters: []*ec2.Filter{
+				{
+					Name:   aws.String(fmt.Sprintf("tag:sigs.k8s.io/cluster-api-provider-aws/cluster/%s", s.clusterInfo.Name)),
+					Values: aws.StringSlice([]string{"owned"}),
+				},
+				{
+					Name:   aws.String("tag:sigs.k8s.io/cluster-api-provider-aws/role"),
+					Values: aws.StringSlice([]string{"control-plane"}),
+				},
+			},
+		}
+
+		o, err := s.ec2Client.DescribeInstances(i)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		for _, r := range o.Reservations {
+			for _, i := range r.Instances {
+				instanceIDs = append(instanceIDs, *i.InstanceId)
+			}
+		}
+
+		if len(instanceIDs) > 0 {
+			fmt.Printf("Found %d CAPI control plane nodes, registering them with vintage API loadblancers, waited %d sec.\n", len(instanceIDs), counter)
+			break
+		} else {
+			fmt.Printf("Found %d CAPI control plane nodes in AWS. Retrying in 15 sec.\n", len(instanceIDs))
+		}
+		time.Sleep(time.Second * 15)
+		counter += 15
+	}
+
+	elbNames := []string{fmt.Sprintf("%s-api", s.clusterInfo.Name), fmt.Sprintf("%s-api-internal", s.clusterInfo.Name)}
+
+	for _, lb := range elbNames {
+		i := &elb.RegisterInstancesWithLoadBalancerInput{
+			LoadBalancerName: aws.String(lb),
+		}
+		for _, id := range instanceIDs {
+			i.Instances = append(i.Instances, &elb.Instance{
+				InstanceId: aws.String(id),
+			})
+		}
+
+		_, err := s.elbClient.RegisterInstancesWithLoadBalancer(i)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) deleteVintageASGGroups(stackName string) error {
+	i := autoscaling.DescribeAutoScalingGroupsInput{
+		Filters: []*autoscaling.Filter{
+			{
+				Name: aws.String("tag:giantswarm.io/cluster"),
+				Values: []*string{
+					aws.String(s.clusterInfo.Name),
+				},
+			},
+			{
+				Name: aws.String("tag:giantswarm.io/stack"),
+				Values: []*string{
+					aws.String(stackName),
+				},
+			},
+		},
+	}
+
+	out, err := s.asgClient.DescribeAutoScalingGroups(&i)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	for _, asg := range out.AutoScalingGroups {
+
+		i := autoscaling.DeleteAutoScalingGroupInput{
+			AutoScalingGroupName: asg.AutoScalingGroupName,
+			ForceDelete:          aws.Bool(true),
+		}
+
+		_, err := s.asgClient.DeleteAutoScalingGroup(&i)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	return nil
 }

@@ -15,6 +15,8 @@ import (
 
 const (
 	joinEtcdClusterScriptKey = "join-etcd-cluster"
+	moveEtcdLeaderScriptKey  = "move-etcd-leader"
+	apiHealthzVintagePodKey  = "api-healthz-vintage-pod"
 )
 
 // migrateCAsSecrets fetches CA private key from vault and save it to 'clusterID-ca` and 'clusterID-etcd' secret into CAPI MC
@@ -103,10 +105,10 @@ func (s *Service) migrateSASecret(ctx context.Context) error {
 	}
 
 	saSecret.Name = saCertsSecretNameCAPI(s.clusterInfo.Name)
-	saSecret.Data["tls.crt"] = saSecret.Data["cert"]
+	saSecret.Data["tls.crt"] = saSecret.Data["pub"]
 	saSecret.Data["tls.key"] = saSecret.Data["key"]
 
-	delete(saSecret.Data, "cert")
+	delete(saSecret.Data, "pub")
 	delete(saSecret.Data, "key")
 
 	saSecret.ResourceVersion = ""
@@ -121,8 +123,8 @@ func (s *Service) migrateSASecret(ctx context.Context) error {
 	return nil
 }
 
-// createEtcdJoinScriptSecret creates a secret that will be mounted as a file into control-plane in order to join the vintage etcd cluster
-func (s *Service) createEtcdJoinScriptSecret(ctx context.Context, baseDomain string) error {
+// createScriptsSecret creates a secret that will be mounted as a file into control-plane in order to join the vintage etcd cluster
+func (s *Service) createScriptsSecret(ctx context.Context, baseDomain string) error {
 	params := struct {
 		ETCDEndpoint string
 	}{
@@ -134,6 +136,16 @@ func (s *Service) createEtcdJoinScriptSecret(ctx context.Context, baseDomain str
 		return microerror.Mask(err)
 	}
 
+	moveEtcdLeaderContent, err := templates.RenderTemplate(templates.AWSMoveLeaderCommand, params)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	apiHealthzVintagePodContent, err := templates.RenderTemplate(templates.APIHealthzVintagePod, params)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      customFilesSecretName(s.clusterInfo.Name),
@@ -141,7 +153,9 @@ func (s *Service) createEtcdJoinScriptSecret(ctx context.Context, baseDomain str
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
+			apiHealthzVintagePodKey:  apiHealthzVintagePodContent,
 			joinEtcdClusterScriptKey: joinEtcdClusterContent,
+			moveEtcdLeaderScriptKey:  moveEtcdLeaderContent,
 		},
 	}
 	err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, secret)
@@ -163,7 +177,7 @@ func caCertsSecretName(clusterName string) string {
 }
 
 func saCertsSecretNameVintage(clusterName string) string {
-	return fmt.Sprintf("%s-service-account", clusterName)
+	return fmt.Sprintf("%s-service-account-v2", clusterName)
 }
 
 func saCertsSecretNameCAPI(clusterName string) string {

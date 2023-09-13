@@ -13,6 +13,10 @@ func (s *Service) getCAData() ([]byte, []byte, error) {
 		return nil, nil, microerror.Mask(err)
 	}
 
+	if secret.Data == nil {
+		fmt.Printf("ERROR: failed to fetch CA data, is the hacked vault deployed?")
+		return nil, nil, microerror.Maskf(&microerror.Error{Kind: ""}, "fetching CA data failed, secret DATA is nil")
+	}
 	keyData, ok := secret.Data["private_key"].(string)
 	if !ok {
 		return nil, nil, microerror.Maskf(&microerror.Error{Kind: ""}, "failed to convert vault private key data into []byte")

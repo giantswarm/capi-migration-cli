@@ -17,10 +17,11 @@ type Metadata struct {
 }
 
 type ControlPlane struct {
-	ApiExtraArgs     map[string]string   `yaml:"apiExtraArgs"`
-	ApiExtraCertSans []string            `yaml:"apiExtraCertSANs"`
-	InstanceType     string              `yaml:"instanceType"`
-	SubnetTags       []map[string]string `yaml:"subnetTags"`
+	AdditionalSecurityGroupID string              `yaml:"additionalSecurityGroupID"`
+	ApiExtraArgs              map[string]string   `yaml:"apiExtraArgs"`
+	ApiExtraCertSans          []string            `yaml:"apiExtraCertSANs"`
+	InstanceType              string              `yaml:"instanceType"`
+	SubnetTags                []map[string]string `yaml:"subnetTags"`
 }
 
 type Internal struct {
@@ -28,30 +29,32 @@ type Internal struct {
 }
 
 type Migration struct {
-	ControlPlaneAdditionalSecurityGroupID string            `yaml:"controlPlaneAdditionalSecurityGroupID"`
-	ControlPlaneExtraFiles                []File            `yaml:"controlPlaneExtraFiles"`
-	ControlPlanePreKubeadmCommands        []string          `yaml:"controlPlanePreKubeadmCommands"`
-	EtcdExtraArgs                         map[string]string `yaml:"etcdExtraArgs"`
+	ApiBindPort                     int               `yaml:"apiBindPort"`
+	ControlPlaneExtraFiles          []File            `yaml:"controlPlaneExtraFiles"`
+	ControlPlanePreKubeadmCommands  []string          `yaml:"controlPlanePreKubeadmCommands"`
+	ControlPlanePostKubeadmCommands []string          `yaml:"controlPlanePostKubeadmCommands"`
+	EtcdExtraArgs                   map[string]string `yaml:"etcdExtraArgs"`
 }
 
 type File struct {
 	Path       string `yaml:"path"`
 	SecretName string `yaml:"secretName"`
-	SecretKey  string
+	SecretKey  string `yaml:"secretKey"`
 }
 
 type NodePool struct {
 	AdditionalSecurityGroupID string              `yaml:"additionalSecurityGroupID"`
 	AvailabilityZones         []string            `yaml:"availabilityZones"`
 	InstanceType              string              `yaml:"instanceType"`
-	Min                       int                 `yaml:"min"`
-	Max                       int                 `yaml:"max"`
+	MinSize                   int                 `yaml:"minSize"`
+	MaxSize                   int                 `yaml:"maxSize"`
 	RootVolumeSizeGB          int                 `yaml:"rootVolumeSizeGB"`
 	SubnetTags                []map[string]string `yaml:"subnetTags"`
 }
 
 type ProviderSpecific struct {
 	AwsClusterRoleIdentityName string `yaml:"awsClusterRoleIdentityName"`
+	Region                     string `yaml:"region"`
 }
 
 type Connectivity struct {

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.37.0"
-	ClusterAppCatalog  = "cluster"
+	ClusterAppVersion  = "0.39.0-9c343341237bfc7045caa8084735a2a5f320023e"
+	ClusterAppCatalog  = "cluster-test"
 	DefaultAppsVersion = "0.32.0"
 	DefaultAppsCatalog = "cluster"
 
@@ -28,7 +28,13 @@ const (
 )
 
 func (s *Service) GenerateCAPIClusterTemplates(ctx context.Context) error {
-	err := s.templateClusterAWS(ctx)
+	// remove file if it already exists
+	err := removeTemplateFileIfExists(clusterAppYamlFile(s.clusterInfo.Name))
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = s.templateClusterAWS(ctx)
 	if err != nil {
 		fmt.Printf("Failed to generate CAPI cluster template manifest for cluster %s\n", s.clusterInfo.Name)
 		return microerror.Mask(err)
@@ -75,6 +81,7 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		},
 
 		ControlPlane: ControlPlane{
+			AdditionalSecurityGroupID: masterSecurityGroupID,
 			ApiExtraArgs: map[string]string{
 				"etcd-prefix": "giantswarm.io",
 			},
@@ -84,17 +91,31 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		},
 		Internal: Internal{
 			Migration: Migration{
-				ControlPlaneAdditionalSecurityGroupID: masterSecurityGroupID,
+				ApiBindPort: 443,
 				ControlPlaneExtraFiles: []File{
 					{
 						Path:       "/migration/join-existing-cluster.sh",
 						SecretName: customFilesSecretName(s.clusterInfo.Name),
 						SecretKey:  joinEtcdClusterScriptKey,
 					},
+					{
+						Path:       "/migration/move-etcd-leader.sh",
+						SecretName: customFilesSecretName(s.clusterInfo.Name),
+						SecretKey:  moveEtcdLeaderScriptKey,
+					},
+					{
+						Path:       "/etc/kubernetes/manifests/api-healthz-vintage-pod.yaml",
+						SecretName: customFilesSecretName(s.clusterInfo.Name),
+						SecretKey:  apiHealthzVintagePodKey,
+					},
 				},
 				ControlPlanePreKubeadmCommands: []string{
-					"iptables -A PREROUTING -t nat  -p tcp --dport 443 -j REDIRECT --to-port 6443 # route traffic from 443 to 6443",
+					"iptables -A PREROUTING -t nat  -p tcp --dport 6443 -j REDIRECT --to-port 443 # route traffic from 6443 to 443",
+					"iptables -t nat -A OUTPUT -p tcp --destination 127.0.0.1 --dport 6443 -j REDIRECT --to-port 443 # include localhost",
 					"/bin/sh /migration/join-existing-cluster.sh",
+				},
+				ControlPlanePostKubeadmCommands: []string{
+					"/bin/sh /migration/move-etcd-leader.sh",
 				},
 				EtcdExtraArgs: map[string]string{
 					"initial-cluster-state":                          "existing",
@@ -118,6 +139,7 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		},
 		ProviderSpecific: ProviderSpecific{
 			AwsClusterRoleIdentityName: awsClusterRoleIdentityName(s.clusterInfo.Name),
+			Region:                     s.vintageCRs.AwsCluster.Spec.Provider.Region,
 		},
 	}
 
@@ -132,8 +154,8 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 			AdditionalSecurityGroupID: id,
 			AvailabilityZones:         mp.Spec.Provider.AvailabilityZones,
 			InstanceType:              mp.Spec.Provider.Worker.InstanceType,
-			Min:                       mp.Spec.NodePool.Scaling.Min,
-			Max:                       mp.Spec.NodePool.Scaling.Max,
+			MinSize:                   mp.Spec.NodePool.Scaling.Min,
+			MaxSize:                   mp.Spec.NodePool.Scaling.Max,
 			RootVolumeSizeGB:          calculateRootVolumeSize(mp.Spec.NodePool.Machine.DockerVolumeSizeGB, mp.Spec.NodePool.Machine.KubeletVolumeSizeGB),
 			SubnetTags:                buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
 		}
@@ -329,4 +351,17 @@ func buildCPSubnetTags(clusterName string) []map[string]string {
 			"giantswarm.io/stack": "tccp",
 		},
 	}
+}
+
+func removeTemplateFileIfExists(filename string) error {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return nil
+	}
+
+	err := os.RemoveAll(filename)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
 }

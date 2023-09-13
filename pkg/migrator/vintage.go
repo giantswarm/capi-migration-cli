@@ -3,14 +3,22 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"os"
+	"sync"
+	"time"
 
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
 	"github.com/giantswarm/apiextensions/v6/pkg/label"
 	"github.com/giantswarm/microerror"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/kubectl/pkg/drain"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+)
+
+const (
+	AWSOperatorVersionLabel = "aws-operator.giantswarm.io/version"
 )
 
 type VintageCRs struct {
@@ -218,4 +226,72 @@ func getClusterServiceCidrBlock(ctx context.Context, k8sClient client.Client, cr
 	}
 
 	return awsConfigData.Installation.V1.Guest.Kubernetes.API.ClusterIPRange, nil
+}
+
+// drainVintageNodes drains all vintage nodes of specific role
+func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
+	nodes, err := getVintageNodes(ctx, s.clusterInfo.MC.VintageKubernetesClient, role)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	nodeShutdownHelper := drain.Helper{
+		Ctx:                             ctx,                               // pass the current context
+		Client:                          s.clusterInfo.KubernetesClientSet, // the k8s client for making the API calls
+		Force:                           true,                              // forcing the draining
+		GracePeriodSeconds:              60,                                // 60 seconds of timeout before deleting the pod
+		IgnoreAllDaemonSets:             true,                              // ignore the daemonsets
+		Timeout:                         5 * time.Minute,                   // give a 5 minutes timeout
+		DeleteEmptyDirData:              true,                              // delete all the emptyDir volumes
+		DisableEviction:                 false,                             // we want to evict and not delete. (might be different for the master nodes)
+		SkipWaitForDeleteTimeoutSeconds: 15,                                // in case a node is NotReady then the pods won't be deleted, so don't wait too long
+		Out:                             os.Stdout,
+		ErrOut:                          os.Stderr,
+	}
+	var wg sync.WaitGroup
+	// Loop through the list of nodes
+	for _, node := range nodes {
+		wg.Add(1)
+
+		go func(node v1.Node) {
+			defer wg.Done()
+
+			fmt.Printf("Started draining node %s\n", node.Name)
+
+			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+			if err != nil {
+				fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
+			}
+
+			err = drain.RunNodeDrain(&nodeShutdownHelper, node.Name)
+			if err != nil {
+				fmt.Printf("ERRROR: failed to drain node %s, reason: %s\n", node.Name, err.Error())
+			}
+			fmt.Printf("Drained node %s\n", node.Name)
+
+		}(node)
+	}
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+	return nil
+}
+
+// getVintageNodes returns all nodes with AWSOperatorVersionLabel label
+func getVintageNodes(ctx context.Context, k8sClient client.Client, role string) ([]v1.Node, error) {
+	var nodes v1.NodeList
+
+	err := k8sClient.List(ctx, &nodes, client.MatchingLabels{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	var nodeList []v1.Node
+	for _, node := range nodes.Items {
+		// only vintage nodes have AWSOperator label
+		if _, ok := node.Labels[AWSOperatorVersionLabel]; ok {
+			nodeList = append(nodeList, node)
+		}
+	}
+
+	return nodeList, nil
 }
