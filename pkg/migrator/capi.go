@@ -14,8 +14,8 @@ import (
 	"github.com/giantswarm/microerror"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	capa "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -25,31 +25,34 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 		return microerror.Mask(err)
 	}
 
-	awsClusterRoleIdentity := &capa.AWSClusterRoleIdentity{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: awsClusterRoleIdentityName(s.clusterInfo.Name),
-			Labels: map[string]string{
+	awsClusterRoleIdentity := &unstructured.Unstructured{}
+	awsClusterRoleIdentity.Object = map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"name": awsClusterRoleIdentityName(s.clusterInfo.Name),
+			"labels": map[string]interface{}{
 				"giantswarm.io/cluster":      s.clusterInfo.Name,
 				"giantswarm.io/organization": organizationFromNamespace(s.clusterInfo.Namespace),
 			},
 		},
-		Spec: capa.AWSClusterRoleIdentitySpec{
-			SourceIdentityRef: &capa.AWSIdentityReference{
-				Kind: "AWSClusterControllerIdentity",
-				Name: capa.AWSClusterControllerIdentityName,
+		"spec": map[string]interface{}{
+			"sourceIdentityRef": map[string]interface{}{
+				"kind": "AWSClusterControllerIdentity",
+				"name": "default",
 			},
-			AWSRoleSpec: capa.AWSRoleSpec{
-				RoleArn: fmt.Sprintf("arn:aws:iam::%s:role/giantswarm-%s-capa-controller", accountID, s.clusterInfo.MC.CapiMC),
-			},
-			AWSClusterIdentitySpec: capa.AWSClusterIdentitySpec{
-				AllowedNamespaces: &capa.AllowedNamespaces{
-					NamespaceList: nil,
-					Selector:      metav1.LabelSelector{},
+			"roleArn": fmt.Sprintf("arn:aws:iam::%s:role/giantswarm-%s-capa-controller", accountID, s.clusterInfo.MC.CapiMC),
+			"allowedNamespaces": map[string]interface{}{
+				"namespaceList": nil,
+				"selector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{},
 				},
 			},
 		},
 	}
-
+	awsClusterRoleIdentity.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "infrastructure.cluster.x-k8s.io",
+		Kind:    "AWSClusterRoleIdentity",
+		Version: "v1beta2",
+	})
 	err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, awsClusterRoleIdentity)
 
 	if apierrors.IsAlreadyExists(err) {
