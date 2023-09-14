@@ -156,6 +156,23 @@ func New(c Config) (*Cluster, error) {
 	}, nil
 }
 
+func (c *Cluster) RefreshAWSCredentials() error {
+	awsCredentials, clusterRegion, err := getAWSCredentials(c.MC.VintageMC, c.Name)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// test credentials
+	awsSession, err := session.NewSession(&aws.Config{
+		Region:      aws.String(clusterRegion),
+		Credentials: awsCredentials,
+	})
+
+	c.AWSSession = awsSession
+
+	return nil
+}
+
 // LoginOrReuseKubeconfig will return k8s client for the specific wc or MC client, it will try if there is already existing context or login if its missing
 func loginOrReuseKubeconfig(cluster []string) (client.Client, kubernetes.Interface, error) {
 	ctrlClient, clientSet, err := getK8sClientFromKubeconfig(contextNameFromCluster(cluster))

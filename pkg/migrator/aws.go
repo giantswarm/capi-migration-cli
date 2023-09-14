@@ -5,12 +5,21 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/elb"
+	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/fatih/color"
 	"github.com/giantswarm/microerror"
 )
+
+func (s *Service) CreateAWSClients(awsSession *session.Session) {
+	s.ec2Client = ec2.New(awsSession)
+	s.elbClient = elb.New(awsSession)
+	s.route53Client = route53.New(awsSession)
+	s.asgClient = autoscaling.New(awsSession)
+}
 
 func (s *Service) getMasterSecurityGroupID() (string, error) {
 	var err error
@@ -210,13 +219,13 @@ func (s *Service) addNewControlPlaneNodesToVintageELBs() error {
 		}
 
 		if len(instanceIDs) > 0 {
-			fmt.Printf("Found %d CAPI control plane nodes, registering them with vintage API loadblancers, waited %d sec.\n", len(instanceIDs), counter)
+			fmt.Printf("\nFound %d CAPI control plane nodes, registering them with vintage API load-balancers, waited %d sec.\n", len(instanceIDs), counter)
 			break
 		} else {
-			fmt.Printf("Found %d CAPI control plane nodes in AWS. Retrying in 15 sec.\n", len(instanceIDs))
+			fmt.Print(".")
 		}
-		time.Sleep(time.Second * 15)
-		counter += 15
+		time.Sleep(time.Second * 10)
+		counter += 10
 	}
 
 	elbNames := []string{fmt.Sprintf("%s-api", s.clusterInfo.Name), fmt.Sprintf("%s-api-internal", s.clusterInfo.Name)}
@@ -263,6 +272,8 @@ func (s *Service) deleteVintageASGGroups(stackName string) error {
 		return microerror.Mask(err)
 	}
 
+	fmt.Printf("Found %d ASG groups for deletion\n", len(out.AutoScalingGroups))
+
 	for _, asg := range out.AutoScalingGroups {
 
 		i := autoscaling.DeleteAutoScalingGroupInput{
@@ -274,6 +285,23 @@ func (s *Service) deleteVintageASGGroups(stackName string) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}
+		fmt.Printf("Deleted ASG group %s\n", *asg.AutoScalingGroupName)
+
+		var instanceIDs []*string
+		for _, instance := range asg.Instances {
+			instanceIDs = append(instanceIDs, instance.InstanceId)
+		}
+
+		// terminate each instance in the ASG
+		i2 := &ec2.TerminateInstancesInput{
+			InstanceIds: instanceIDs,
+		}
+		_, err = s.ec2Client.TerminateInstances(i2)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		fmt.Printf("Terminated %d instances in ASG group %s\n", len(instanceIDs), *asg.AutoScalingGroupName)
+
 	}
 
 	return nil

@@ -7,9 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fatih/color"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
 	"github.com/giantswarm/apiextensions/v6/pkg/label"
+	"github.com/giantswarm/k8smetadata/pkg/annotation"
 	"github.com/giantswarm/microerror"
+	v1apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kubectl/pkg/drain"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -162,6 +165,32 @@ func stopVintageReconciliation(ctx context.Context, k8sClient client.Client, crs
 	return nil
 }
 
+func disableVintageHealthCheck(ctx context.Context, k8sClient client.Client, crs *VintageCRs) error {
+	crs.AwsCluster.Annotations[annotation.NodeTerminateUnhealthy] = "false"
+	err := k8sClient.Update(ctx, crs.AwsCluster)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	return nil
+}
+
+func scaleDownVintageAppOperator(ctx context.Context, k8sClient client.Client, clusterName string) error {
+	// fetch app-operator deployment named app-operator-CLUSTER_NAME in namespace clusterName
+	var deployment v1apps.Deployment
+	err := k8sClient.Get(ctx, client.ObjectKey{Name: fmt.Sprintf("app-operator-%s", clusterName), Namespace: clusterName}, &deployment)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// set replicas to zero na update the deployment
+	deployment.Spec.Replicas = new(int32)
+	err = k8sClient.Update(ctx, &deployment)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	return nil
+}
+
 func fetchVintageClusterAccountRole(ctx context.Context, k8sClient client.Client, secretName string, secretNamespace string) (string, error) {
 	var secret v1.Secret
 	err := k8sClient.Get(ctx, client.ObjectKey{Name: secretName, Namespace: secretNamespace}, &secret)
@@ -230,10 +259,11 @@ func getClusterServiceCidrBlock(ctx context.Context, k8sClient client.Client, cr
 
 // drainVintageNodes drains all vintage nodes of specific role
 func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
-	nodes, err := getVintageNodes(ctx, s.clusterInfo.MC.VintageKubernetesClient, role)
+	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, role)
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	fmt.Printf("Found %d nodes for draining\n", len(nodes))
 
 	nodeShutdownHelper := drain.Helper{
 		Ctx:                             ctx,                               // pass the current context
@@ -267,7 +297,7 @@ func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
 			if err != nil {
 				fmt.Printf("ERRROR: failed to drain node %s, reason: %s\n", node.Name, err.Error())
 			}
-			fmt.Printf("Drained node %s\n", node.Name)
+			color.Yellow("Finished draining node %s", node.Name)
 
 		}(node)
 	}
@@ -280,7 +310,6 @@ func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
 // getVintageNodes returns all nodes with AWSOperatorVersionLabel label
 func getVintageNodes(ctx context.Context, k8sClient client.Client, role string) ([]v1.Node, error) {
 	var nodes v1.NodeList
-
 	err := k8sClient.List(ctx, &nodes, client.MatchingLabels{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""})
 	if err != nil {
 		return nil, microerror.Mask(err)

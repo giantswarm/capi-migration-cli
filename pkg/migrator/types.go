@@ -11,9 +11,10 @@ type ClusterAppValuesData struct {
 }
 
 type Metadata struct {
-	Name         string `yaml:"name"`
-	Description  string `yaml:"description"`
-	Organization string `yaml:"organization"`
+	Name            string `yaml:"name"`
+	Description     string `yaml:"description"`
+	Organization    string `yaml:"organization"`
+	ServicePriority string `yaml:"servicePriority"`
 }
 
 type ControlPlane struct {

@@ -3,10 +3,10 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
-	"strings"
 	"time"
 
 	awsarn "github.com/aws/aws-sdk-go/aws/arn"
@@ -39,12 +39,10 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 				"kind": "AWSClusterControllerIdentity",
 				"name": "default",
 			},
-			"roleArn": fmt.Sprintf("arn:aws:iam::%s:role/giantswarm-%s-capa-controller", accountID, s.clusterInfo.MC.CapiMC),
+			"roleARN": fmt.Sprintf("arn:aws:iam::%s:role/giantswarm-%s-capa-controller", accountID, s.clusterInfo.MC.CapiMC),
 			"allowedNamespaces": map[string]interface{}{
-				"namespaceList": nil,
-				"selector": map[string]interface{}{
-					"matchLabels": map[string]interface{}{},
-				},
+				"list":     nil,
+				"selector": map[string]interface{}{},
 			},
 		},
 	}
@@ -64,9 +62,9 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 	return nil
 }
 
-func (s *Service) createCAPICluster() error {
-	fmt.Printf("Applying CAPI cluster APP CR to MC\n\n")
-	c := exec.Command("kubectl", "apply", "-f", clusterAppYamlFile(s.clusterInfo.Name))
+func (s *Service) applyCAPICluster() error {
+	fmt.Printf("Applying CAPI cluster APP CR to MC\n")
+	c := exec.Command("kubectl", "--context", fmt.Sprintf("gs-%s", s.clusterInfo.MC.CapiMC), "apply", "-f", clusterAppYamlFile(s.clusterInfo.Name))
 
 	c.Stderr = os.Stderr
 	c.Stdin = os.Stdin
@@ -75,6 +73,7 @@ func (s *Service) createCAPICluster() error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	color.Green("CAPI Cluster app created successfully.\n\n")
 	return nil
 }
 
@@ -95,6 +94,11 @@ func (s *Service) cleanEtcdInKubeadmConfigMap(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	err = cleanEtcdInitialClusterInFile(clusterAppYamlFile(s.clusterInfo.Name))
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	return nil
 }
 
@@ -111,59 +115,78 @@ func awsClusterRoleIdentityName(clusterName string) string {
 	return fmt.Sprintf("%s-aws-cluster-role-identity", clusterName)
 }
 
-// cleanEtcdInitialCluster removes old and non-existing entries from initial-cluster in kubeadm configmap
+// cleanEtcdInitialCluster removes the entry from teh configmap that contains the etcd cluster
 func cleanEtcdInitialCluster(input string) string {
-	// Define a regular expression pattern to match the unwanted lines in initial-cluster.
-	pattern := `etcd\d=.*?:\d+,?`
+	regex := regexp.MustCompile(`\s*initial-cluster: .+,\n`)
 
-	// Compile the regular expression pattern.
-	regex := regexp.MustCompile(pattern)
+	// Replace the matching line with new line only
+	output := regex.ReplaceAllString(input, "\n")
 
-	// Find all matches in the input string.
-	matches := regex.FindAllStringSubmatch(input, -1)
-
-	updatedInput := input
-	// Iterate through the matches and remove them from the input
-	for _, match := range matches {
-		updatedInput = strings.Replace(updatedInput, match[0], "", 1)
-		fmt.Printf("Removed %s from the etcd initial-cluster in kubeadm-config configmap.\n", match[0])
-	}
-
-	updatedInput = strings.Replace(updatedInput, ",", "", 1)
-
-	return updatedInput
+	fmt.Printf("Removed initial-cluster from kubeadm configmap\n")
+	return output
 }
 
-func (s *Service) waitForCapiControlPlaneNodeReady(ctx context.Context) {
-	var nodeList v1.NodeList
+func cleanEtcdInitialClusterInFile(filename string) error {
+	// read file
+	f, err := os.OpenFile(filename, os.O_RDONLY, 0640)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	// read whole content of the file
+	content, err := io.ReadAll(f)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
-	color.Yellow("Waiting for CAPI Control Plane node with status Ready")
+	f2, err := os.OpenFile(filename, os.O_WRONLY|os.O_TRUNC, 0640)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	updatedContent := cleanEtcdInitialCluster(string(content))
+	// write text to the file and override existing content
+	_, err = f2.WriteString(updatedContent)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	return nil
+}
+
+func (s *Service) waitForCapiNodesReady(ctx context.Context, role string, count int) {
+	var nodeList v1.NodeList
+	color.Yellow("Waiting for %d CAPI %s node with status Ready", count, role)
 	counter := 0
+	readyNodes := map[string]string{}
 	for {
 		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodeList, client.MatchingLabels{
-			"node-role.kubernetes.io/control-plane": "",
+			fmt.Sprintf("node-role.kubernetes.io/%s", role): "",
 		})
 		if err != nil {
 			fmt.Printf("ERROR: failed to get nodes : %s, retrying in 5 sec\n", err.Error())
 			time.Sleep(time.Second * 5)
 			continue
 		}
-
 		for _, node := range nodeList.Items {
 			// aws-operator label exists only on the vintage node so if it is missing it is a CAPI node
 			if _, ok := node.Labels["aws-operator.giantswarm.io/version"]; ok {
 				continue
 			} else {
 				for _, condition := range node.Status.Conditions {
-					if condition.Type == v1.NodeReady {
-						fmt.Printf("Found CAPI control plane node %s with status Ready, waited for %d sec.\n", node.Name, counter)
-						return
+					if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
+						if _, ok := readyNodes[node.Name]; !ok {
+							readyNodes[node.Name] = ""
+							fmt.Printf("\nCAPI %s node %s ready\n", role, node.Name)
+						}
+						if len(readyNodes) == count {
+							color.Yellow("\nFound CAPI %d %s nodes with status Ready, waited for %d sec.\n", count, role, counter)
+							return
+						}
 					}
 				}
 			}
 
 		}
-		fmt.Printf("Did not find CAPI Control Plane node with status Ready yet. Retrying in 10 sec.\n")
+		fmt.Printf(".")
 		time.Sleep(time.Second * 10)
 		counter += 10
 	}

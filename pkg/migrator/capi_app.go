@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.39.0-9c343341237bfc7045caa8084735a2a5f320023e"
+	ClusterAppVersion  = "0.39.0-d1556b50bbcad2ca9c7f972315ec784e2bc94f52"
 	ClusterAppCatalog  = "cluster-test"
 	DefaultAppsVersion = "0.32.0"
 	DefaultAppsCatalog = "cluster"
@@ -57,7 +57,10 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-
+	servicePriority, ok := s.vintageCRs.AwsCluster.Annotations["giantswarm.io/service-priority"]
+	if !ok {
+		servicePriority = "highest"
+	}
 	// fetch info from AWS
 	masterSecurityGroupID, err := s.getMasterSecurityGroupID()
 	if err != nil {
@@ -75,9 +78,10 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 	// fill the struct
 	data := &ClusterAppValuesData{
 		Metadata: Metadata{
-			Name:         s.clusterInfo.Name,
-			Organization: organizationFromNamespace(s.clusterInfo.Namespace),
-			Description:  getClusterDescription(s.vintageCRs),
+			Name:            s.clusterInfo.Name,
+			Organization:    organizationFromNamespace(s.clusterInfo.Namespace),
+			Description:     getClusterDescription(s.vintageCRs),
+			ServicePriority: servicePriority,
 		},
 
 		ControlPlane: ControlPlane{

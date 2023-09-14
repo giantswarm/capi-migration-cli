@@ -14,6 +14,11 @@ import (
 	"github.com/giantswarm/capi-migration-cli/cluster"
 )
 
+const (
+	ControlPlaneRole = "control-plane"
+	WorkerRole       = "worker"
+)
+
 type Service struct {
 	clusterInfo *cluster.Cluster
 	vintageCRs  *VintageCRs
@@ -39,11 +44,7 @@ type AppInfo struct {
 
 func New(c Config) (*Service, error) {
 	r := &Service{
-		clusterInfo:   c.Config,
-		ec2Client:     ec2.New(c.Config.AWSSession),
-		elbClient:     elb.New(c.Config.AWSSession),
-		route53Client: route53.New(c.Config.AWSSession),
-		asgClient:     autoscaling.New(c.Config.AWSSession),
+		clusterInfo: c.Config,
 		app: AppInfo{
 			ClusterAppCatalog:  ClusterAppCatalog,
 			ClusterAppVersion:  ClusterAppVersion,
@@ -51,6 +52,8 @@ func New(c Config) (*Service, error) {
 			DefaultAppsVersion: DefaultAppsVersion,
 		},
 	}
+
+	r.CreateAWSClients(c.Config.AWSSession)
 
 	return r, nil
 }
@@ -87,6 +90,24 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 	} else {
 		fmt.Printf("Successfully migrated cluster IAM account role to AWSClusterRoleIdentity.\n")
 	}
+	// disable vintage health check
+	err = disableVintageHealthCheck(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs)
+	if err != nil {
+		fmt.Printf("Failed to disable vintage health check.\n")
+		return microerror.Mask(err)
+	} else {
+		fmt.Printf("Successfully disabled vintage machine health check.\n")
+	}
+
+	// scale down app operator deployment
+	err = scaleDownVintageAppOperator(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.clusterInfo.Name)
+	if err != nil {
+		fmt.Printf("Failed to scale down app operator deployment.\n")
+		return microerror.Mask(err)
+	} else {
+		fmt.Printf("Successfully scaled down Vintage app operator deployment.\n")
+	}
+
 	color.Green("Preparation phase completed.\n\n")
 
 	return nil
@@ -105,7 +126,7 @@ func (s *Service) MigrationPhaseStopVintageReconciliation(ctx context.Context) e
 }
 
 func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error {
-	err := s.createCAPICluster()
+	err := s.applyCAPICluster()
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -115,33 +136,59 @@ func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error 
 		return microerror.Mask(err)
 	}
 
-	s.waitForCapiControlPlaneNodeReady(ctx)
+	s.waitForCapiNodesReady(ctx, ControlPlaneRole, 1)
 
 	err = s.cleanEtcdInKubeadmConfigMap(ctx)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
+	// reapply the updated configmap
+	err = s.applyCAPICluster()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// wait for all CAPI control plane nodes to be ready
+	s.waitForCapiNodesReady(ctx, ControlPlaneRole, 3)
+
 	return nil
 }
 
 func (s *Service) MigrationPhaseCleanVintageCluster(ctx context.Context) error {
+	fmt.Printf("Draining all vintage control plane nodes\n")
 	err := s.drainVintageNodes(ctx, "control-plane")
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+	// refresh AWS credentials in case they expired
+	err = s.clusterInfo.RefreshAWSCredentials()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	s.CreateAWSClients(s.clusterInfo.AWSSession)
+
+	fmt.Printf("Deleting vintage control plane ASGs\n")
 	err = s.deleteVintageASGGroups("tccpn")
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	/*
-		s.drainVintageNodes(ctx, "worker")
+	fmt.Printf("Deleted vintage control plane ASGs\n")
 
+	/*
+		for _, mp := range s.vintageCRs.AwsMachineDeployments {
+			s.waitForCapiNodesReady(ctx, WorkerRole, mp.Spec.NodePool.Scaling.Min)
+			err = s.drainVintageNodes(ctx, "worker")
+			if err != nil {
+				return microerror.Mask(err)
+			}
+		}
 		err = s.deleteVintageASGGroups("tcnp")
 		if err != nil {
 			return microerror.Mask(err)
-		}
-	*/
+		}*/
+
 	return nil
 }
 
