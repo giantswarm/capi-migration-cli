@@ -113,6 +113,37 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) migrateSecrets(ctx context.Context) error {
+	err := s.migrateCAsSecrets(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	err = s.migrateEncryptionSecret(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	err = s.migrateSASecret(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
+}
+
+func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
+	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
+}
+
 func (s *Service) MigrationPhaseStopVintageReconciliation(ctx context.Context) error {
 	color.Yellow("Stopping reconciliation of Vintage CRs")
 	if s.vintageCRs == nil {
@@ -126,7 +157,12 @@ func (s *Service) MigrationPhaseStopVintageReconciliation(ctx context.Context) e
 }
 
 func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error {
-	err := s.applyCAPICluster()
+	err := s.GenerateCAPIClusterTemplates(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = s.applyCAPICluster()
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -200,37 +236,6 @@ func (s *Service) MigrationPhaseCleanVintageCluster(ctx context.Context) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}*/
-
-	return nil
-}
-
-func (s *Service) migrateSecrets(ctx context.Context) error {
-	err := s.migrateCAsSecrets(ctx)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	err = s.migrateEncryptionSecret(ctx)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	err = s.migrateSASecret(ctx)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
-}
-
-func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
-	vintageIAMRole, err := fetchVintageClusterAccountRole(ctx, s.clusterInfo.MC.VintageKubernetesClient, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Name, s.vintageCRs.AwsCluster.Spec.Provider.CredentialSecret.Namespace)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	err = s.createAWSClusterRoleIdentity(ctx, vintageIAMRole)
-	if err != nil {
-		return microerror.Mask(err)
-	}
 
 	return nil
 }
