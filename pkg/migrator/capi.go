@@ -117,7 +117,7 @@ func awsClusterRoleIdentityName(clusterName string) string {
 
 // cleanEtcdInitialCluster removes the entry from teh configmap that contains the etcd cluster
 func cleanEtcdInitialCluster(input string) string {
-	regex := regexp.MustCompile(`\s*initial-cluster: .+,\n`)
+	regex := regexp.MustCompile(`\s*initial-cluster: .+\n`)
 
 	// Replace the matching line with new line only
 	output := regex.ReplaceAllString(input, "\n")

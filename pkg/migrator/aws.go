@@ -224,8 +224,8 @@ func (s *Service) addNewControlPlaneNodesToVintageELBs() error {
 		} else {
 			fmt.Print(".")
 		}
-		time.Sleep(time.Second * 10)
-		counter += 10
+		time.Sleep(time.Second * 5)
+		counter += 5
 	}
 
 	elbNames := []string{fmt.Sprintf("%s-api", s.clusterInfo.Name), fmt.Sprintf("%s-api-internal", s.clusterInfo.Name)}

@@ -149,6 +149,18 @@ func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error 
 		return microerror.Mask(err)
 	}
 
+	// cordon all vintage control plane nodes
+	err = s.cordonVintageNodes(ctx, ControlPlaneRole)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// delete chart-operator pod in the WC cluster to reschedule it on new CAPi control-plane-node
+	err = s.deleteChartOperatorPods(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	// wait for all CAPI control plane nodes to be ready
 	s.waitForCapiNodesReady(ctx, ControlPlaneRole, 3)
 

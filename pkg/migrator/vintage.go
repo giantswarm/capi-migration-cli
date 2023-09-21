@@ -14,6 +14,7 @@ import (
 	"github.com/giantswarm/microerror"
 	v1apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/kubectl/pkg/drain"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -166,6 +167,9 @@ func stopVintageReconciliation(ctx context.Context, k8sClient client.Client, crs
 }
 
 func disableVintageHealthCheck(ctx context.Context, k8sClient client.Client, crs *VintageCRs) error {
+	if crs.AwsCluster.Annotations == nil {
+		crs.AwsCluster.Annotations = map[string]string{}
+	}
 	crs.AwsCluster.Annotations[annotation.NodeTerminateUnhealthy] = "false"
 	err := k8sClient.Update(ctx, crs.AwsCluster)
 	if err != nil {
@@ -307,6 +311,37 @@ func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
 	return nil
 }
 
+// cordonVintageNodes cordons all vintage nodes of specific role
+func (s *Service) cordonVintageNodes(ctx context.Context, role string) error {
+	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, role)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	fmt.Printf("Found %d nodes for cordoning\n", len(nodes))
+
+	nodeShutdownHelper := drain.Helper{
+		Ctx:                             ctx,                               // pass the current context
+		Client:                          s.clusterInfo.KubernetesClientSet, // the k8s client for making the API calls
+		Force:                           true,                              // forcing the draining
+		GracePeriodSeconds:              60,                                // 60 seconds of timeout before deleting the pod
+		IgnoreAllDaemonSets:             true,                              // ignore the daemonsets
+		Timeout:                         5 * time.Minute,                   // give a 5 minutes timeout
+		DeleteEmptyDirData:              true,                              // delete all the emptyDir volumes
+		DisableEviction:                 false,                             // we want to evict and not delete. (might be different for the master nodes)
+		SkipWaitForDeleteTimeoutSeconds: 15,                                // in case a node is NotReady then the pods won't be deleted, so don't wait too long
+		Out:                             os.Stdout,
+		ErrOut:                          os.Stderr,
+	}
+
+	for _, node := range nodes {
+		err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+		if err != nil {
+			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
+		}
+	}
+	return nil
+}
+
 // getVintageNodes returns all nodes with AWSOperatorVersionLabel label
 func getVintageNodes(ctx context.Context, k8sClient client.Client, role string) ([]v1.Node, error) {
 	var nodes v1.NodeList
@@ -323,4 +358,26 @@ func getVintageNodes(ctx context.Context, k8sClient client.Client, role string) 
 	}
 
 	return nodeList, nil
+}
+
+// deleteChartOperatorPod deletes chart-operator pods in the WC cluster to reschedule it on new CAPI control-plane-node
+func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
+	// fetch chart-operator pod
+	var pods v1.PodList
+	err := s.clusterInfo.KubernetesControllerClient.List(ctx, &pods, client.MatchingLabels{"app": "chart-operator"}, client.InNamespace("giantswarm"))
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	for _, pod := range pods.Items {
+		// delete the pod
+		err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pod)
+		if apierrors.IsNotFound(err) {
+			// vanished, lets continue
+		} else if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	return nil
 }

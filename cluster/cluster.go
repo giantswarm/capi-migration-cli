@@ -162,7 +162,6 @@ func (c *Cluster) RefreshAWSCredentials() error {
 		return microerror.Mask(err)
 	}
 
-	// test credentials
 	awsSession, err := session.NewSession(&aws.Config{
 		Region:      aws.String(clusterRegion),
 		Credentials: awsCredentials,
