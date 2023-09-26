@@ -73,7 +73,7 @@ func (s *Service) applyCAPICluster() error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	color.Green("CAPI Cluster app created successfully.\n\n")
+	color.Green("CAPI Cluster app applied successfully.\n\n")
 	return nil
 }
 
@@ -175,7 +175,7 @@ func (s *Service) waitForCapiNodesReady(ctx context.Context, role string, count 
 					if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
 						if _, ok := readyNodes[node.Name]; !ok {
 							readyNodes[node.Name] = ""
-							fmt.Printf("\nCAPI %s node %s ready\n", role, node.Name)
+							fmt.Printf("\nCAPI %s node %s ready. %d/%d\n", role, node.Name, len(readyNodes), count)
 						}
 						if len(readyNodes) == count {
 							color.Yellow("\nFound CAPI %d %s nodes with status Ready, waited for %d sec.\n", count, role, counter)

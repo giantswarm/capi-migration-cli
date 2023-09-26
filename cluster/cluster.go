@@ -62,25 +62,25 @@ type ManagementCluster struct {
 }
 
 func New(c Config) (*Cluster, error) {
-	color.Yellow("Checking kubernetes client for Vintage MC %s", c.MCVintage)
+	color.Yellow("Checking kubernetes client for Vintage MC %s.", c.MCVintage)
 	vintageKubernetesClient, _, err := loginOrReuseKubeconfig([]string{c.MCVintage})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	color.Yellow("Checking kubernetes client for the cluster %s", c.ClusterName)
+	color.Yellow("Checking kubernetes client for the cluster %s.", c.ClusterName)
 	clusterKubernetesClient, clusterClientSet, err := loginOrReuseKubeconfig([]string{c.MCVintage, c.ClusterName})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	color.Yellow("Checking kubernetes client for CAPI MC %s", c.MCCapi)
+	color.Yellow("Checking kubernetes client for CAPI MC %s.", c.MCCapi)
 	capiKubernetesClient, _, err := loginOrReuseKubeconfig([]string{c.MCCapi})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	color.Yellow("Generating AWS credentials for cluster  %s/%s", c.MCVintage, c.ClusterName)
+	color.Yellow("Generating AWS credentials for cluster %s/%s.", c.MCVintage, c.ClusterName)
 	var clusterRegion string
 	var awsSession *session.Session
 	{

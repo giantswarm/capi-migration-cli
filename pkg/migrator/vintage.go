@@ -13,12 +13,15 @@ import (
 	"github.com/giantswarm/k8smetadata/pkg/annotation"
 	"github.com/giantswarm/microerror"
 	v1apps "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/kubectl/pkg/drain"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/giantswarm/capi-migration-cli/pkg/templates"
 )
 
 const (
@@ -378,6 +381,54 @@ func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 	}
+
+	return nil
+}
+
+// stopVintageControlPlaneComponents will run a job on each pod that will remove static manifest fot control-plane components
+func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
+	// fetch all master nodes
+	var nodes v1.NodeList
+	err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodes, client.MatchingLabels{"node-role.kubernetes.io/master": ""})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	var jobList []batchv1.Job
+	// run a job on each node that will remove static manifest fot control-plane components
+	for _, node := range nodes.Items {
+		if _, ok := node.Labels[AWSOperatorVersionLabel]; !ok {
+			// Skipping node  it is a CAPI node
+			continue
+		}
+		job := templates.CleanManifestsJob(node.Name)
+
+		err = s.clusterInfo.KubernetesControllerClient.Create(ctx, &job)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		jobList = append(jobList, job)
+		fmt.Printf("Created job %s\n", job.Name)
+	}
+
+	fmt.Printf("Waiting until all jobs finished\n")
+	// wait until all jobs finished
+	for i, job := range jobList {
+		for {
+			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			if job.Status.Succeeded == 1 {
+				fmt.Printf("Job %d/%d - %s finished.\n", i+1, len(jobList), job.Name)
+				break
+			} else {
+				fmt.Printf(".")
+				time.Sleep(time.Second * 2)
+			}
+		}
+	}
+	fmt.Printf("\n")
 
 	return nil
 }

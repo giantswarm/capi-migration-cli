@@ -144,7 +144,7 @@ func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) MigrationPhaseStopVintageReconciliation(ctx context.Context) error {
+func (s *Service) StopVintageReconciliation(ctx context.Context) error {
 	color.Yellow("Stopping reconciliation of Vintage CRs")
 	if s.vintageCRs == nil {
 		return microerror.Maskf(executionFailedError, "vintage CRs cannot be nil")
@@ -156,7 +156,7 @@ func (s *Service) MigrationPhaseStopVintageReconciliation(ctx context.Context) e
 	return nil
 }
 
-func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error {
+func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	err := s.GenerateCAPIClusterTemplates(ctx)
 	if err != nil {
 		return microerror.Mask(err)
@@ -167,7 +167,7 @@ func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error 
 		return microerror.Mask(err)
 	}
 
-	err = s.addNewControlPlaneNodesToVintageELBs()
+	err = s.addCAPIControlPlaneNodesToVintageELBs()
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -181,6 +181,11 @@ func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error 
 
 	// reapply the updated configmap
 	err = s.applyCAPICluster()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = s.stopVintageControlPlaneComponents(ctx)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -200,29 +205,29 @@ func (s *Service) MigrationPhaseProvisionCAPICluster(ctx context.Context) error 
 	// wait for all CAPI control plane nodes to be ready
 	s.waitForCapiNodesReady(ctx, ControlPlaneRole, 3)
 
+	// now add the remaining nodes to vintage ELBs
+	err = s.addCAPIControlPlaneNodesToVintageELBs()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
 	return nil
 }
 
-func (s *Service) MigrationPhaseCleanVintageCluster(ctx context.Context) error {
-	fmt.Printf("Draining all vintage control plane nodes\n")
+// CleanVintageCluster drains all vintage nodes and deletes the ASGs
+func (s *Service) CleanVintageCluster(ctx context.Context) error {
+	color.Yellow("Draining all vintage control plane nodes")
 	err := s.drainVintageNodes(ctx, "control-plane")
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	// refresh AWS credentials in case they expired
-	err = s.clusterInfo.RefreshAWSCredentials()
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	s.CreateAWSClients(s.clusterInfo.AWSSession)
-
-	fmt.Printf("Deleting vintage control plane ASGs\n")
+	color.Yellow("Deleting vintage control plane ASGs\n")
 	err = s.deleteVintageASGGroups("tccpn")
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	fmt.Printf("Deleted vintage control plane ASGs\n")
+	color.Yellow("Deleted vintage control plane ASGs\n")
 
 	/*
 		for _, mp := range s.vintageCRs.AwsMachineDeployments {

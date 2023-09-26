@@ -187,7 +187,7 @@ func (s *Service) getSubnets(vpcID string) ([]Subnet, error) {
 	return subnets, nil
 }
 
-func (s *Service) addNewControlPlaneNodesToVintageELBs() error {
+func (s *Service) addCAPIControlPlaneNodesToVintageELBs() error {
 	var instanceIDs []string
 
 	color.Yellow("Adding CAPI control plane nodes to vintage ELBs")
@@ -231,10 +231,22 @@ func (s *Service) addNewControlPlaneNodesToVintageELBs() error {
 	elbNames := []string{fmt.Sprintf("%s-api", s.clusterInfo.Name), fmt.Sprintf("%s-api-internal", s.clusterInfo.Name)}
 
 	for _, lb := range elbNames {
+
 		i := &elb.RegisterInstancesWithLoadBalancerInput{
 			LoadBalancerName: aws.String(lb),
 		}
 		for _, id := range instanceIDs {
+			alreadyRegistered, err := s.isInstanceRegisteredWithLoadbalancer(id, lb)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			if alreadyRegistered {
+				fmt.Printf("Instance %s already registered with ELB %s\n", id, lb)
+				continue
+			} else {
+				fmt.Printf("Registering instance %s with ELB %s\n", id, lb)
+			}
+
 			i.Instances = append(i.Instances, &elb.Instance{
 				InstanceId: aws.String(id),
 			})
@@ -247,6 +259,23 @@ func (s *Service) addNewControlPlaneNodesToVintageELBs() error {
 	}
 
 	return nil
+}
+
+func (s *Service) isInstanceRegisteredWithLoadbalancer(instanceID string, elbName string) (bool, error) {
+	// describe elb and check if instance is registered
+	i := &elb.DescribeLoadBalancersInput{
+		LoadBalancerNames: aws.StringSlice([]string{elbName}),
+	}
+	o, err := s.elbClient.DescribeLoadBalancers(i)
+	if err != nil {
+		return false, microerror.Mask(err)
+	}
+	for _, i := range o.LoadBalancerDescriptions[0].Instances {
+		if *i.InstanceId == instanceID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *Service) deleteVintageASGGroups(stackName string) error {

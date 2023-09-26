@@ -32,21 +32,23 @@ import (
 )
 
 var flags = struct {
-	MCVintage        string
-	MCCapi           string
-	ClusterName      string
-	ClusterNamespace string
-	Phase            string
+	MCVintage                   string
+	MCCapi                      string
+	ClusterName                 string
+	ClusterNamespace            string
+	WorkerNodeDrainBatchSize    int
+	StopVintageCrReconciliation bool
 }{}
 
 func initFlags() (errors []error) {
 	// Flag/configuration names.
 	const (
-		flagMCVintage        = "mc-vintage"
-		flagMCCapi           = "mc-capi"
-		flagClusterName      = "cluster-name"
-		flagClusterNamespace = "cluster-namespace"
-		flagPhase            = "phase"
+		flagMCVintage                   = "mc-vintage"
+		flagMCCapi                      = "mc-capi"
+		flagClusterName                 = "cluster-name"
+		flagClusterNamespace            = "cluster-namespace"
+		flagWorkerNodeDrainBatchSize    = "worker-node-drain-batch-size"
+		flagStopVintageCrReconciliation = "stop-vintage-cr-reconciliation"
 	)
 
 	// Flag binding.
@@ -54,7 +56,8 @@ func initFlags() (errors []error) {
 	flag.StringVar(&flags.MCCapi, flagMCCapi, "", "Name of the installation where the cluster will be migrated to.")
 	flag.StringVar(&flags.ClusterName, flagClusterName, "", "Cluster name/ID")
 	flag.StringVar(&flags.ClusterNamespace, flagClusterNamespace, "", "Namespace where the Cluster CRs are")
-	flag.StringVar(&flags.Phase, flagPhase, "all", "Define which phase should run, allowed values ['prepare','stop-reconciliation','create-capi','all'] default 'all'")
+	flag.IntVar(&flags.WorkerNodeDrainBatchSize, flagWorkerNodeDrainBatchSize, 3, "Number of worker nodes to drain at once")
+	flag.BoolVar(&flags.StopVintageCrReconciliation, flagStopVintageCrReconciliation, false, "Stop reconciliation on vintage cluster, this will remove aws-operator labels on all vintage CRs to avoid any trouble. For testing purposes tis disabled as this would make hard to clean up the testing cluster afterwards.")
 
 	// Parse flags and configuration.
 	flag.Parse()
@@ -96,10 +99,6 @@ func main() {
 func mainE(ctx context.Context) error {
 	var err error
 
-	if flags.Phase != "all" {
-		color.Red("WARNING: flag '--phase=all' is only implemented for now.")
-	}
-
 	var configService *cluster.Cluster
 	{
 		c := cluster.Config{
@@ -137,19 +136,26 @@ func mainE(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	// err = migratorService.MigrationPhaseStopVintageReconciliation(ctx)
-	// if err != nil {
-	//	fmt.Printf("Failed to stop reconciliation on vintage cluster\n")
-	//	return microerror.Mask(err)
-	// }
+	if flags.StopVintageCrReconciliation {
+		err = migratorService.StopVintageReconciliation(ctx)
+		if err != nil {
+			fmt.Printf("Failed to stop reconciliation on vintage cluster\n")
+			return microerror.Mask(err)
+		}
+		fmt.Printf("Stopped reconciliation of CRs on vintage cluster, aws-operator labels were removed from all CRs.\n")
+	} else {
+		// its easier to delete the whole cluster if we don't stop reconciliation
+		// intended for testing purposes
+		fmt.Printf("Skipping stopping reconciliation of CRs on vintage cluster\n")
+	}
 
-	err = migratorService.MigrationPhaseProvisionCAPICluster(ctx)
+	err = migratorService.ProvisionCAPICluster(ctx)
 	if err != nil {
 		fmt.Printf("Failed to create CAPI cluster\n")
 		return microerror.Mask(err)
 	}
 
-	err = migratorService.MigrationPhaseCleanVintageCluster(ctx)
+	err = migratorService.CleanVintageCluster(ctx)
 	if err != nil {
 		fmt.Printf("Failed to clean vintage cluster\n")
 		return microerror.Mask(err)
