@@ -44,10 +44,10 @@ This tools executed folowing steps
   * add all CAPI control plane nodes to the vintage ELBs
 
 * Clean Vintage Cluster Phase
- * drain all vintage control-plane nodes
- * delete vintage ASG groups for control-plane nodes (tccpn) and terminate all instances in that ASG groups
- * drain all vintage worker nodes
- * delete all vintage ASGs
+  * drain all vintage control-plane nodes
+  * delete vintage ASG groups for control-plane nodes (tccpn) and terminate all instances in that ASG groups
+  * drain all vintage worker nodes
+  * delete all vintage ASGs
 
    
 
