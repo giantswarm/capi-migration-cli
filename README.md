@@ -9,12 +9,13 @@
 This tools executed folowing steps
 ### Steps:
 
-*  Init Phase
+* Init Phase
   * get Vintage MC kubeconfig via `opsctl login`
   * get WC cluster kubeconfig via `opsctl login`
   * get CAPI MC kubeconfig via opsctl login
   * generate AWS credential neceseery to work with the WC cluster AWS account - via opsctl credentials aws
   * create a vault client to Vintage Vault via opsctl create vaultconfig
+
 * Prepare Migration Phase
   * fetch all vintage CRs  representing infrastructure of WC cluster in VIntage MC
   * migrate secrets to CAPI mc 
