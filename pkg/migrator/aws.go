@@ -278,22 +278,19 @@ func (s *Service) isInstanceRegisteredWithLoadbalancer(instanceID string, elbNam
 	return false, nil
 }
 
-func (s *Service) deleteVintageASGGroups(stackName string) error {
-	i := autoscaling.DescribeAutoScalingGroupsInput{
-		Filters: []*autoscaling.Filter{
-			{
-				Name: aws.String("tag:giantswarm.io/cluster"),
-				Values: []*string{
-					aws.String(s.clusterInfo.Name),
-				},
-			},
-			{
-				Name: aws.String("tag:giantswarm.io/stack"),
-				Values: []*string{
-					aws.String(stackName),
-				},
+func (s *Service) deleteVintageASGGroups(filters []*autoscaling.Filter) error {
+	f := []*autoscaling.Filter{
+		{
+			Name: aws.String("tag:giantswarm.io/cluster"),
+			Values: []*string{
+				aws.String(s.clusterInfo.Name),
 			},
 		},
+	}
+	f = append(f, filters...)
+
+	i := autoscaling.DescribeAutoScalingGroupsInput{
+		Filters: f,
 	}
 
 	out, err := s.asgClient.DescribeAutoScalingGroups(&i)
@@ -334,4 +331,32 @@ func (s *Service) deleteVintageASGGroups(stackName string) error {
 	}
 
 	return nil
+}
+
+func tccpnAsgFilters() []*autoscaling.Filter {
+	return []*autoscaling.Filter{
+		{
+			Name: aws.String("tag:giantswarm.io/stack"),
+			Values: []*string{
+				aws.String("tccpn"),
+			},
+		},
+	}
+}
+
+func tcnpAsgFilters(nodePoolName string) []*autoscaling.Filter {
+	return []*autoscaling.Filter{
+		{
+			Name: aws.String("tag:giantswarm.io/stack"),
+			Values: []*string{
+				aws.String("tcnp"),
+			},
+		},
+		{
+			Name: aws.String("tag:giantswarm.io/machine-deployment"),
+			Values: []*string{
+				aws.String(nodePoolName),
+			},
+		},
+	}
 }

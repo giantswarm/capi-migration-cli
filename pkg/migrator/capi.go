@@ -152,15 +152,36 @@ func cleanEtcdInitialClusterInFile(filename string) error {
 	return nil
 }
 
-func (s *Service) waitForCapiNodesReady(ctx context.Context, role string, count int) {
+func (s *Service) waitForCapiControlPlaneNodesReady(ctx context.Context, count int) error {
+	// wait for 3 nodes with status Ready
+	labels := client.MatchingLabels{
+		"node-role.kubernetes.io/control-plane": "",
+	}
+	s.waitForCapiNodesReady(ctx, labels, count)
+	return nil
+}
+
+func (s *Service) waitForNodePoolNodesReady(ctx context.Context, nodePoolName string) error {
+	capiLabels := client.MatchingLabels{
+		"giantswarm.io/machine-deployment": nodePoolName,
+		"node-role.kubernetes.io/worker":   "",
+	}
+	nodeCount, err := s.vintageNodePoolNodeCount(nodePoolName)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	s.waitForCapiNodesReady(ctx, capiLabels, nodeCount)
+	return nil
+}
+
+func (s *Service) waitForCapiNodesReady(ctx context.Context, labels client.MatchingLabels, count int) {
 	var nodeList v1.NodeList
-	color.Yellow("Waiting for %d CAPI %s node with status Ready", count, role)
+	color.Yellow("Waiting for CAPI %s node with status Ready", count)
 	counter := 0
 	readyNodes := map[string]string{}
 	for {
-		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodeList, client.MatchingLabels{
-			fmt.Sprintf("node-role.kubernetes.io/%s", role): "",
-		})
+		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodeList, labels)
 		if err != nil {
 			fmt.Printf("ERROR: failed to get nodes : %s, retrying in 5 sec\n", err.Error())
 			time.Sleep(time.Second * 5)
@@ -175,10 +196,10 @@ func (s *Service) waitForCapiNodesReady(ctx context.Context, role string, count 
 					if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
 						if _, ok := readyNodes[node.Name]; !ok {
 							readyNodes[node.Name] = ""
-							fmt.Printf("\nCAPI %s node %s ready. %d/%d\n", role, node.Name, len(readyNodes), count)
+							fmt.Printf("\nCAPI node %s ready. %d/%d\n", node.Name, len(readyNodes), count)
 						}
 						if len(readyNodes) == count {
-							color.Yellow("\nFound CAPI %d %s nodes with status Ready, waited for %d sec.\n", count, role, counter)
+							color.Yellow("\nFound CAPI %d nodes with status Ready, waited for %d sec.\n", count, counter)
 							return
 						}
 					}

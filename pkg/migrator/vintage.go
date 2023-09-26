@@ -265,8 +265,8 @@ func getClusterServiceCidrBlock(ctx context.Context, k8sClient client.Client, cr
 }
 
 // drainVintageNodes drains all vintage nodes of specific role
-func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
-	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, role)
+func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingLabels) error {
+	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -315,8 +315,8 @@ func (s *Service) drainVintageNodes(ctx context.Context, role string) error {
 }
 
 // cordonVintageNodes cordons all vintage nodes of specific role
-func (s *Service) cordonVintageNodes(ctx context.Context, role string) error {
-	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, role)
+func (s *Service) cordonVintageNodes(ctx context.Context, labels client.MatchingLabels) error {
+	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -336,19 +336,19 @@ func (s *Service) cordonVintageNodes(ctx context.Context, role string) error {
 		ErrOut:                          os.Stderr,
 	}
 
-	for _, node := range nodes {
-		err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+	for i, _ := range nodes {
+		err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &nodes[i], true)
 		if err != nil {
-			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
+			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", nodes[i].Name, err.Error())
 		}
 	}
 	return nil
 }
 
 // getVintageNodes returns all nodes with AWSOperatorVersionLabel label
-func getVintageNodes(ctx context.Context, k8sClient client.Client, role string) ([]v1.Node, error) {
+func getVintageNodes(ctx context.Context, k8sClient client.Client, labels client.MatchingLabels) ([]v1.Node, error) {
 	var nodes v1.NodeList
-	err := k8sClient.List(ctx, &nodes, client.MatchingLabels{fmt.Sprintf("node-role.kubernetes.io/%s", role): ""})
+	err := k8sClient.List(ctx, &nodes, labels)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -372,9 +372,9 @@ func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	for _, pod := range pods.Items {
+	for i, _ := range pods.Items {
 		// delete the pod
-		err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pod)
+		err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pods.Items[i])
 		if apierrors.IsNotFound(err) {
 			// vanished, lets continue
 		} else if err != nil {
@@ -415,7 +415,7 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 	// wait until all jobs finished
 	for i, job := range jobList {
 		for {
-			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &job)
+			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &jobList[i])
 			if err != nil {
 				return microerror.Mask(err)
 			}
@@ -431,4 +431,20 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 	fmt.Printf("\n")
 
 	return nil
+}
+
+func (s *Service) vintageNodePoolNodeCount(nodePoolName string) (int, error) {
+	var nodes v1.NodeList
+	err := s.clusterInfo.KubernetesControllerClient.List(context.Background(), &nodes, client.MatchingLabels{"giantswarm.io/machine-deployment": nodePoolName})
+	if err != nil {
+		return 0, microerror.Mask(err)
+	}
+	nodeCount := 0
+	for _, node := range nodes.Items {
+		if _, ok := node.Labels[AWSOperatorVersionLabel]; ok {
+			nodeCount++
+		}
+	}
+
+	return nodeCount, nil
 }

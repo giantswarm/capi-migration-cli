@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/fatih/color"
 	"github.com/giantswarm/microerror"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/capi-migration-cli/cluster"
 )
@@ -172,7 +173,11 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	s.waitForCapiNodesReady(ctx, ControlPlaneRole, 1)
+	// wait for first CAPI control plane node to be ready
+	err = s.waitForCapiControlPlaneNodesReady(ctx, 1)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	err = s.cleanEtcdInKubeadmConfigMap(ctx)
 	if err != nil {
@@ -191,7 +196,7 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	}
 
 	// cordon all vintage control plane nodes
-	err = s.cordonVintageNodes(ctx, ControlPlaneRole)
+	err = s.cordonVintageNodes(ctx, controlPlaneNodeLabels())
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -203,8 +208,10 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	}
 
 	// wait for all CAPI control plane nodes to be ready
-	s.waitForCapiNodesReady(ctx, ControlPlaneRole, 3)
-
+	err = s.waitForCapiControlPlaneNodesReady(ctx, 3)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	// now add the remaining nodes to vintage ELBs
 	err = s.addCAPIControlPlaneNodesToVintageELBs()
 	if err != nil {
@@ -217,30 +224,46 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 // CleanVintageCluster drains all vintage nodes and deletes the ASGs
 func (s *Service) CleanVintageCluster(ctx context.Context) error {
 	color.Yellow("Draining all vintage control plane nodes")
-	err := s.drainVintageNodes(ctx, "control-plane")
+	err := s.drainVintageNodes(ctx, controlPlaneNodeLabels())
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	color.Yellow("Deleting vintage control plane ASGs\n")
-	err = s.deleteVintageASGGroups("tccpn")
+	err = s.deleteVintageASGGroups(tccpnAsgFilters())
 	if err != nil {
 		return microerror.Mask(err)
 	}
 	color.Yellow("Deleted vintage control plane ASGs\n")
 
-	/*
-		for _, mp := range s.vintageCRs.AwsMachineDeployments {
-			s.waitForCapiNodesReady(ctx, WorkerRole, mp.Spec.NodePool.Scaling.Min)
-			err = s.drainVintageNodes(ctx, "worker")
-			if err != nil {
-				return microerror.Mask(err)
-			}
-		}
-		err = s.deleteVintageASGGroups("tcnp")
+	for _, mp := range s.vintageCRs.AwsMachineDeployments {
+		err = s.waitForNodePoolNodesReady(ctx, mp.Name)
 		if err != nil {
 			return microerror.Mask(err)
-		}*/
+		}
+		color.Yellow("Draining all vintage worker nodes for nodepool %s", mp.Name)
+		err = s.drainVintageNodes(ctx, nodePoolNodeLabels(mp.Name))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		color.Yellow("Deleting vintage  %s node pool ASG\n", mp.Name)
+		err = s.deleteVintageASGGroups(tcnpAsgFilters(mp.Name))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		color.Yellow("Deleted vintage %s node pool ASG\n", mp.Name)
+	}
 
 	return nil
+}
+
+func controlPlaneNodeLabels() client.MatchingLabels {
+	return client.MatchingLabels{"node-role.kubernetes.io/control-plane": ""}
+}
+
+func nodePoolNodeLabels(nodePoolName string) client.MatchingLabels {
+	return client.MatchingLabels{
+		"node-role.kubernetes.io/control-plane": "",
+		"giantswarm.io/machine-deployment":      nodePoolName,
+	}
 }
