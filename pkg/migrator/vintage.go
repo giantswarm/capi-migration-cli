@@ -198,6 +198,27 @@ func scaleDownVintageAppOperator(ctx context.Context, k8sClient client.Client, c
 	return nil
 }
 
+func deleteCapiAppOperatorPod(ctx context.Context, k8sClient client.Client, clusterName string) error {
+	// fetch app-operator deployment named app-operator-CLUSTER_NAME in namespace clusterName
+	var podList v1.PodList
+	err := k8sClient.List(ctx, &podList, client.MatchingLabels{"app.kubernetes.io/instance": fmt.Sprintf("%s-app-operator", clusterName)})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	for _, pod := range podList.Items {
+		// delete the pod
+		err = k8sClient.Delete(ctx, &pod)
+		if apierrors.IsNotFound(err) {
+			// vanished, lets continue
+		} else if err != nil {
+			return microerror.Mask(err)
+		}
+		fmt.Printf("Deleted pod %s/%s on CAPI MC to force reconcilation\n", pod.Namespace, pod.Name)
+	}
+	return nil
+}
+
 func fetchVintageClusterAccountRole(ctx context.Context, k8sClient client.Client, secretName string, secretNamespace string) (string, error) {
 	var secret v1.Secret
 	err := k8sClient.Get(ctx, client.ObjectKey{Name: secretName, Namespace: secretNamespace}, &secret)
@@ -380,6 +401,7 @@ func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
 		} else if err != nil {
 			return microerror.Mask(err)
 		}
+		fmt.Printf("Deleted pod %s/%s to reschedule it on CAPI control plane node\n", pods.Items[i].Namespace, pods.Items[i].Name)
 	}
 
 	return nil
@@ -387,6 +409,7 @@ func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
 
 // stopVintageControlPlaneComponents will run a job on each pod that will remove static manifest fot control-plane components
 func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
+	color.Yellow("Removing static manifests for control-plane components on all vintage nodes.")
 	// fetch all master nodes
 	var nodes v1.NodeList
 	err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodes, client.MatchingLabels{"node-role.kubernetes.io/master": ""})
@@ -413,18 +436,25 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 
 	fmt.Printf("Waiting until all jobs finished\n")
 	// wait until all jobs finished
-	for i, job := range jobList {
+	for i, _ := range jobList {
 		for {
-			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, &jobList[i])
-			if err != nil {
+			var job batchv1.Job
+			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: jobList[i].Name, Namespace: jobList[i].Namespace}, &job)
+			if apierrors.IsNotFound(err) {
+				// job is still being created
+				time.Sleep(time.Second * 5)
+				continue
+			} else if err != nil {
 				return microerror.Mask(err)
 			}
+
 			if job.Status.Succeeded == 1 {
 				fmt.Printf("Job %d/%d - %s finished.\n", i+1, len(jobList), job.Name)
 				break
 			} else {
-				fmt.Printf(".")
-				time.Sleep(time.Second * 2)
+				// fmt.Printf(".")
+				fmt.Printf("Job %d/%d - %s not finished yet, waiting 5 sec.\n", i+1, len(jobList), job.Name)
+				time.Sleep(time.Second * 5)
 			}
 		}
 	}
@@ -447,4 +477,15 @@ func (s *Service) vintageNodePoolNodeCount(nodePoolName string) (int, error) {
 	}
 
 	return nodeCount, nil
+}
+
+func controlPlaneNodeLabels() client.MatchingLabels {
+	return client.MatchingLabels{"node-role.kubernetes.io/control-plane": ""}
+}
+
+func vintageNodePoolNodeLabels(nodePoolName string) client.MatchingLabels {
+	return client.MatchingLabels{
+		"node-role.kubernetes.io/worker":   "",
+		"giantswarm.io/machine-deployment": nodePoolName,
+	}
 }

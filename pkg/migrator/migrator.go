@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -10,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/fatih/color"
 	"github.com/giantswarm/microerror"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/capi-migration-cli/cluster"
 )
@@ -168,10 +168,14 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	err = s.addCAPIControlPlaneNodesToVintageELBs()
-	if err != nil {
-		return microerror.Mask(err)
-	}
+	// the CAPI control plane nodes will roll out few times during the migration process
+	// so we run the function in goroutine to add them to the vintage ELBs to ensure there are always up-to-date
+	go func() {
+		for {
+			_ = s.addCAPIControlPlaneNodesToVintageELBs()
+			time.Sleep(time.Minute)
+		}
+	}()
 
 	// wait for first CAPI control plane node to be ready
 	err = s.waitForCapiControlPlaneNodesReady(ctx, 1)
@@ -179,6 +183,7 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	// clean hardcoded values for etcd from the config
 	err = s.cleanEtcdInKubeadmConfigMap(ctx)
 	if err != nil {
 		return microerror.Mask(err)
@@ -190,13 +195,21 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	// run job to remove all control plane static manifests from vintage control plane nodes
 	err = s.stopVintageControlPlaneComponents(ctx)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	// cordon all vintage control plane nodes
+	color.Yellow("Cordon all vintage control plane nodes.")
 	err = s.cordonVintageNodes(ctx, controlPlaneNodeLabels())
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// delete CAPI app operator pod to force immediate reconciliation
+	err = deleteCapiAppOperatorPod(ctx, s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Name)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -212,58 +225,45 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	// now add the remaining nodes to vintage ELBs
-	err = s.addCAPIControlPlaneNodesToVintageELBs()
-	if err != nil {
-		return microerror.Mask(err)
-	}
 
 	return nil
 }
 
 // CleanVintageCluster drains all vintage nodes and deletes the ASGs
 func (s *Service) CleanVintageCluster(ctx context.Context) error {
-	color.Yellow("Draining all vintage control plane nodes")
+	color.Yellow("Draining all vintage control plane nodes.")
 	err := s.drainVintageNodes(ctx, controlPlaneNodeLabels())
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	color.Yellow("Deleting vintage control plane ASGs\n")
+	color.Yellow("Deleting vintage control plane ASGs.\n")
 	err = s.deleteVintageASGGroups(tccpnAsgFilters())
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	color.Yellow("Deleted vintage control plane ASGs\n")
+	color.Yellow("Deleted vintage control plane ASGs.\n")
+	color.Green("Waiting 2 minutes for vintage CP nodes to cleanup.")
+	time.Sleep(time.Minute * 2)
 
 	for _, mp := range s.vintageCRs.AwsMachineDeployments {
-		err = s.waitForNodePoolNodesReady(ctx, mp.Name)
+		color.Yellow("Waiting for all CAPI nodes in node pool %s to be ready.", mp.Name)
+		err = s.waitForCapiNodePoolNodesReady(ctx, mp.Name)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		color.Yellow("Draining all vintage worker nodes for nodepool %s", mp.Name)
-		err = s.drainVintageNodes(ctx, nodePoolNodeLabels(mp.Name))
+		color.Yellow("Draining all vintage worker nodes for nodepool %s.", mp.Name)
+		err = s.drainVintageNodes(ctx, vintageNodePoolNodeLabels(mp.Name))
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		color.Yellow("Deleting vintage  %s node pool ASG\n", mp.Name)
+		color.Yellow("Deleting vintage  %s node pool ASG.\n", mp.Name)
 		err = s.deleteVintageASGGroups(tcnpAsgFilters(mp.Name))
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		color.Yellow("Deleted vintage %s node pool ASG\n", mp.Name)
+		color.Yellow("Deleted vintage %s node pool ASG.\n", mp.Name)
 	}
 
 	return nil
-}
-
-func controlPlaneNodeLabels() client.MatchingLabels {
-	return client.MatchingLabels{"node-role.kubernetes.io/control-plane": ""}
-}
-
-func nodePoolNodeLabels(nodePoolName string) client.MatchingLabels {
-	return client.MatchingLabels{
-		"node-role.kubernetes.io/control-plane": "",
-		"giantswarm.io/machine-deployment":      nodePoolName,
-	}
 }

@@ -142,11 +142,11 @@ func mainE(ctx context.Context) error {
 			fmt.Printf("Failed to stop reconciliation on vintage cluster\n")
 			return microerror.Mask(err)
 		}
-		fmt.Printf("Stopped reconciliation of CRs on vintage cluster, aws-operator labels were removed from all CRs.\n")
+		color.Red("Stopped reconciliation of CRs on vintage cluster, aws-operator labels were removed from all CRs.")
 	} else {
 		// its easier to delete the whole cluster if we don't stop reconciliation
 		// intended for testing purposes
-		fmt.Printf("Skipping stopping reconciliation of CRs on vintage cluster\n")
+		color.Red("Skipping stopping reconciliation of CRs on vintage cluster")
 	}
 
 	err = migratorService.ProvisionCAPICluster(ctx)

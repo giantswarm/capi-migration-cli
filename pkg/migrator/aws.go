@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/fatih/color"
 	"github.com/giantswarm/microerror"
 )
 
@@ -189,9 +188,6 @@ func (s *Service) getSubnets(vpcID string) ([]Subnet, error) {
 
 func (s *Service) addCAPIControlPlaneNodesToVintageELBs() error {
 	var instanceIDs []string
-
-	color.Yellow("Adding CAPI control plane nodes to vintage ELBs")
-
 	counter := 0
 	for {
 		// get instance IDS with tags
@@ -219,10 +215,7 @@ func (s *Service) addCAPIControlPlaneNodesToVintageELBs() error {
 		}
 
 		if len(instanceIDs) > 0 {
-			fmt.Printf("\nFound %d CAPI control plane nodes, registering them with vintage API load-balancers, waited %d sec.\n", len(instanceIDs), counter)
 			break
-		} else {
-			fmt.Print(".")
 		}
 		time.Sleep(time.Second * 5)
 		counter += 5
@@ -241,7 +234,6 @@ func (s *Service) addCAPIControlPlaneNodesToVintageELBs() error {
 				return microerror.Mask(err)
 			}
 			if alreadyRegistered {
-				fmt.Printf("Instance %s already registered with ELB %s\n", id, lb)
 				continue
 			} else {
 				fmt.Printf("Registering instance %s with ELB %s\n", id, lb)
@@ -250,6 +242,9 @@ func (s *Service) addCAPIControlPlaneNodesToVintageELBs() error {
 			i.Instances = append(i.Instances, &elb.Instance{
 				InstanceId: aws.String(id),
 			})
+		}
+		if len(i.Instances) == 0 {
+			continue
 		}
 
 		_, err := s.elbClient.RegisterInstancesWithLoadBalancer(i)

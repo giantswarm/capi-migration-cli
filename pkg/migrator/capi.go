@@ -161,10 +161,9 @@ func (s *Service) waitForCapiControlPlaneNodesReady(ctx context.Context, count i
 	return nil
 }
 
-func (s *Service) waitForNodePoolNodesReady(ctx context.Context, nodePoolName string) error {
+func (s *Service) waitForCapiNodePoolNodesReady(ctx context.Context, nodePoolName string) error {
 	capiLabels := client.MatchingLabels{
-		"giantswarm.io/machine-deployment": nodePoolName,
-		"node-role.kubernetes.io/worker":   "",
+		"giantswarm.io/machine-pool": fmt.Sprintf("%s-%s", s.clusterInfo.Name, nodePoolName),
 	}
 	nodeCount, err := s.vintageNodePoolNodeCount(nodePoolName)
 	if err != nil {
@@ -177,7 +176,7 @@ func (s *Service) waitForNodePoolNodesReady(ctx context.Context, nodePoolName st
 
 func (s *Service) waitForCapiNodesReady(ctx context.Context, labels client.MatchingLabels, count int) {
 	var nodeList v1.NodeList
-	color.Yellow("Waiting for CAPI %s node with status Ready", count)
+	color.Yellow("Waiting for %d CAPI node with status Ready", count)
 	counter := 0
 	readyNodes := map[string]string{}
 	for {

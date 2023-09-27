@@ -35,19 +35,21 @@ This tools executed folowing steps
 * Provision CAPI Cluster Phase
   * generate CAPI cluster templates - generates APP CRs and the configmaps
   * applies the generated templates to the cluster to start the migration
-  * wait until 1 CAPI control-plane node join the cluster and is in Ready state and add it to all vintage API ELBs - to ensure the old kubeconfigs are still working
+  * start a process in separate go routine that run until end of the cli run - this goroutine will look for CAPI control plane aws machines and add them to the vintage ELBS to keep the old elb active, this is needed as the cp nodes roll over the time so we need to be sureit is always up to date
+  * wait until 1 CAPI control-plane node join the cluster and is in Ready state
   * clean migration configuration for etcd - remove hardcoded initial etcd cluster value - from configmap in WC and from cluster values cm and reapply to save the state
   * stop control-plane components on the vintage cluster - stop kube-apiserver, kube-controller-manager, kube-scheduler via job that removes the manifests from the static dir
   * cordon all vintage Control-planes to avoid scheduling new pods there
+  * delete app operator pod on the CAPI MC to force new reconcilation to speed up app installation (for new apps like capi-node-labeler)
   * delete chart-operator pod in the WC to reschedule it on the new CAPI control-plane node
-  * wait until all CAPI control plane nodes join the cluster and are in Ready state
-  * add all CAPI control plane nodes to the vintage ELBs
+  * wait until all(3) CAPI control plane nodes join the cluster and are in Ready state
 
 * Clean Vintage Cluster Phase
   * drain all vintage control-plane nodes
   * delete vintage ASG groups for control-plane nodes (tccpn) and terminate all instances in that ASG groups
-  * drain all vintage worker nodes
-  * delete all vintage ASGs
+  * sequentially for each node pool:
+    * drain all vintage worker nodes for the nodepool
+    * delete all vintage ASGs for the nodepool
 
    
 

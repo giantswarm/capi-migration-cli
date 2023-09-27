@@ -29,6 +29,7 @@ func CleanManifestsJob(nodeName string) batchv1.Job {
 			Spec: batchv1.JobSpec{
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
+						PriorityClassName: "system-cluster-critical",
 						Volumes: []corev1.Volume{
 							{
 								Name: "host",
@@ -39,6 +40,7 @@ func CleanManifestsJob(nodeName string) batchv1.Job {
 								},
 							},
 						},
+						HostNetwork: true,
 						Containers: []corev1.Container{
 							{
 								Name:  "disable-master-node-components",
