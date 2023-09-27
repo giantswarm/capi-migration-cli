@@ -208,7 +208,7 @@ func deleteCapiAppOperatorPod(ctx context.Context, k8sClient client.Client, clus
 
 	for _, pod := range podList.Items {
 		// delete the pod
-		err = k8sClient.Delete(ctx, &pod)
+		err = k8sClient.Delete(ctx, &pod) //gosec:ignore=G601
 		if apierrors.IsNotFound(err) {
 			// vanished, lets continue
 		} else if err != nil {
@@ -357,7 +357,7 @@ func (s *Service) cordonVintageNodes(ctx context.Context, labels client.Matching
 		ErrOut:                          os.Stderr,
 	}
 
-	for i, _ := range nodes {
+	for i := range nodes {
 		err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &nodes[i], true)
 		if err != nil {
 			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", nodes[i].Name, err.Error())
@@ -393,7 +393,7 @@ func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
-	for i, _ := range pods.Items {
+	for i := range pods.Items {
 		// delete the pod
 		err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pods.Items[i])
 		if apierrors.IsNotFound(err) {
@@ -436,7 +436,7 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 
 	fmt.Printf("Waiting until all jobs finished\n")
 	// wait until all jobs finished
-	for i, _ := range jobList {
+	for i := range jobList {
 		for {
 			var job batchv1.Job
 			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: jobList[i].Name, Namespace: jobList[i].Namespace}, &job)
