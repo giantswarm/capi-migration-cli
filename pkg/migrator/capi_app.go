@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.39.0-d1556b50bbcad2ca9c7f972315ec784e2bc94f52"
+	ClusterAppVersion  = "0.44.0-534bfdecd921b15c7306dbdfcd665d180aeb405f"
 	ClusterAppCatalog  = "cluster-test"
 	DefaultAppsVersion = "0.32.0"
 	DefaultAppsCatalog = "cluster"
@@ -85,7 +85,7 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		},
 
 		ControlPlane: ControlPlane{
-			AdditionalSecurityGroupID: masterSecurityGroupID,
+			AdditionalSecurityGroups: []SecurityGroup{{ID: masterSecurityGroupID}},
 			ApiExtraArgs: map[string]string{
 				"etcd-prefix": "giantswarm.io",
 			},
@@ -98,19 +98,34 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 				ApiBindPort: 443,
 				ControlPlaneExtraFiles: []File{
 					{
-						Path:       "/migration/join-existing-cluster.sh",
-						SecretName: customFilesSecretName(s.clusterInfo.Name),
-						SecretKey:  joinEtcdClusterScriptKey,
+						ContentFrom: ContentFrom{
+							Secret: Secret{
+								Name: customFilesSecretName(s.clusterInfo.Name),
+								Key:  joinEtcdClusterScriptKey,
+							},
+						},
+						Path:        "/migration/join-existing-cluster.sh",
+						Permissions: "0644",
 					},
 					{
-						Path:       "/migration/move-etcd-leader.sh",
-						SecretName: customFilesSecretName(s.clusterInfo.Name),
-						SecretKey:  moveEtcdLeaderScriptKey,
+						ContentFrom: ContentFrom{
+							Secret: Secret{
+								Name: customFilesSecretName(s.clusterInfo.Name),
+								Key:  moveEtcdLeaderScriptKey,
+							},
+						},
+						Path:        "/migration/move-etcd-leader.sh",
+						Permissions: "0644",
 					},
 					{
-						Path:       "/etc/kubernetes/manifests/api-healthz-vintage-pod.yaml",
-						SecretName: customFilesSecretName(s.clusterInfo.Name),
-						SecretKey:  apiHealthzVintagePodKey,
+						ContentFrom: ContentFrom{
+							Secret: Secret{
+								Name: customFilesSecretName(s.clusterInfo.Name),
+								Key:  apiHealthzVintagePodKey,
+							},
+						},
+						Path:        "/etc/kubernetes/manifests/api-healthz-vintage-pod.yaml",
+						Permissions: "0644",
 					},
 				},
 				ControlPlanePreKubeadmCommands: []string{
@@ -155,13 +170,13 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		}
 
 		data.NodePools[mp.Name] = NodePool{
-			AdditionalSecurityGroupID: id,
-			AvailabilityZones:         mp.Spec.Provider.AvailabilityZones,
-			InstanceType:              mp.Spec.Provider.Worker.InstanceType,
-			MinSize:                   mp.Spec.NodePool.Scaling.Min,
-			MaxSize:                   mp.Spec.NodePool.Scaling.Max,
-			RootVolumeSizeGB:          calculateRootVolumeSize(mp.Spec.NodePool.Machine.DockerVolumeSizeGB, mp.Spec.NodePool.Machine.KubeletVolumeSizeGB),
-			SubnetTags:                buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
+			AdditionalSecurityGroups: []SecurityGroup{{ID: id}},
+			AvailabilityZones:        mp.Spec.Provider.AvailabilityZones,
+			InstanceType:             mp.Spec.Provider.Worker.InstanceType,
+			MinSize:                  mp.Spec.NodePool.Scaling.Min,
+			MaxSize:                  mp.Spec.NodePool.Scaling.Max,
+			RootVolumeSizeGB:         calculateRootVolumeSize(mp.Spec.NodePool.Machine.DockerVolumeSizeGB, mp.Spec.NodePool.Machine.KubeletVolumeSizeGB),
+			SubnetTags:               buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
 		}
 	}
 

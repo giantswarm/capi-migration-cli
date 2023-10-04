@@ -175,6 +175,32 @@ func (c *Cluster) RefreshAWSCredentials() error {
 	return nil
 }
 
+// RefreshAWSCredentialsIfExpired will refresh AWS credentials if they are expired
+// it will return true in case the credentials were refreshed or false in cas they are stil valid
+func (c *Cluster) RefreshAWSCredentialsIfExpired() (bool, error) {
+	// Create an STS service client
+	svc := sts.New(c.AWSSession)
+
+	// Call GetCallerIdentity operation to check the validity of the credentials
+	input := &sts.GetCallerIdentityInput{}
+	_, err := svc.GetCallerIdentity(input)
+	if err != nil {
+		// Handle error. If the error message contains "ExpiredToken", credentials have expired.
+		color.Red("AWS Credential expired, need to generate new credentials")
+		err := c.RefreshAWSCredentials()
+		if err != nil {
+			fmt.Printf("failed to refresh credentials\n")
+			return false, microerror.Mask(err)
+		} else {
+			color.Green("refreshed AWS credentials")
+			return true, nil
+		}
+	} else {
+		fmt.Printf("AWS Credentials are still valid, no need to refresh\n")
+	}
+	return false, nil
+}
+
 // LoginOrReuseKubeconfig will return k8s client for the specific wc or MC client, it will try if there is already existing context or login if its missing
 func loginOrReuseKubeconfig(cluster []string) (client.Client, kubernetes.Interface, error) {
 	ctrlClient, clientSet, err := getK8sClientFromKubeconfig(contextNameFromCluster(cluster))

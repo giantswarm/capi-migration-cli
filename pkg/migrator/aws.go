@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
 )
 
@@ -18,6 +19,26 @@ func (s *Service) CreateAWSClients(awsSession *session.Session) {
 	s.elbClient = elb.New(awsSession)
 	s.route53Client = route53.New(awsSession)
 	s.asgClient = autoscaling.New(awsSession)
+}
+
+func (s *Service) refreshAWSClients() error {
+	var refreshed bool
+	var err error
+	refreshClients := func() error {
+		refreshed, err = s.clusterInfo.RefreshAWSCredentialsIfExpired()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err = backoff.Retry(refreshClients, s.backOff)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	if refreshed {
+		s.CreateAWSClients(s.clusterInfo.AWSSession)
+	}
+	return nil
 }
 
 func (s *Service) getMasterSecurityGroupID() (string, error) {
@@ -274,6 +295,7 @@ func (s *Service) isInstanceRegisteredWithLoadbalancer(instanceID string, elbNam
 }
 
 func (s *Service) deleteVintageASGGroups(filters []*autoscaling.Filter) error {
+	var err error
 	f := []*autoscaling.Filter{
 		{
 			Name: aws.String("tag:giantswarm.io/cluster"),
@@ -288,7 +310,15 @@ func (s *Service) deleteVintageASGGroups(filters []*autoscaling.Filter) error {
 		Filters: f,
 	}
 
-	out, err := s.asgClient.DescribeAutoScalingGroups(&i)
+	var out *autoscaling.DescribeAutoScalingGroupsOutput
+	describeASG := func() error {
+		out, err = s.asgClient.DescribeAutoScalingGroups(&i)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err = backoff.Retry(describeASG, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -302,7 +332,14 @@ func (s *Service) deleteVintageASGGroups(filters []*autoscaling.Filter) error {
 			ForceDelete:          aws.Bool(true),
 		}
 
-		_, err := s.asgClient.DeleteAutoScalingGroup(&i)
+		deleteASG := func() error {
+			_, err := s.asgClient.DeleteAutoScalingGroup(&i)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(deleteASG, s.backOff)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -317,7 +354,14 @@ func (s *Service) deleteVintageASGGroups(filters []*autoscaling.Filter) error {
 		i2 := &ec2.TerminateInstancesInput{
 			InstanceIds: instanceIDs,
 		}
-		_, err = s.ec2Client.TerminateInstances(i2)
+		terminateInstances := func() error {
+			_, err = s.ec2Client.TerminateInstances(i2)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(terminateInstances, s.backOff)
 		if err != nil {
 			return microerror.Mask(err)
 		}

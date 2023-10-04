@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.319
 	github.com/fatih/color v1.15.0
 	github.com/giantswarm/apiextensions/v6 v6.6.0
+	github.com/giantswarm/backoff v1.0.0
 	github.com/giantswarm/k8smetadata v0.21.0
 	github.com/giantswarm/kubectl-gs/v2 v2.41.0
 	github.com/giantswarm/microerror v0.4.0
@@ -28,6 +29,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
+	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chai2010/gettext-go v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -37,13 +39,17 @@ require (
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/giantswarm/apiextensions-application v0.6.0 // indirect
+	github.com/giantswarm/micrologger v1.0.0 // indirect
 	github.com/giantswarm/release-operator/v4 v4.1.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.0 // indirect
+	github.com/go-kit/log v0.2.1 // indirect
+	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.20.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/swag v0.22.4 // indirect
+	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect

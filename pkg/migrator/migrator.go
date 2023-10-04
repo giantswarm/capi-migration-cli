@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/fatih/color"
+	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/capi-migration-cli/cluster"
@@ -30,6 +31,9 @@ type Service struct {
 	elbClient     *elb.ELB
 	route53Client *route53.Route53
 	asgClient     *autoscaling.AutoScaling
+
+	// backoff
+	backOff backoff.BackOff
 }
 
 type Config struct {
@@ -52,6 +56,7 @@ func New(c Config) (*Service, error) {
 			DefaultAppsCatalog: DefaultAppsCatalog,
 			DefaultAppsVersion: DefaultAppsVersion,
 		},
+		backOff: backoff.NewMaxRetries(15, 5*time.Second),
 	}
 
 	r.CreateAWSClients(c.Config.AWSSession)
@@ -209,7 +214,7 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	}
 
 	// delete CAPI app operator pod to force immediate reconciliation
-	err = deleteCapiAppOperatorPod(ctx, s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Name)
+	err = s.deleteCapiAppOperatorPod(ctx, s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Name)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -238,6 +243,10 @@ func (s *Service) CleanVintageCluster(ctx context.Context) error {
 	}
 
 	color.Yellow("Deleting vintage control plane ASGs.\n")
+	err = s.refreshAWSClients()
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	err = s.deleteVintageASGGroups(tccpnAsgFilters())
 	if err != nil {
 		return microerror.Mask(err)
@@ -258,6 +267,10 @@ func (s *Service) CleanVintageCluster(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 		color.Yellow("Deleting vintage  %s node pool ASG.\n", mp.Name)
+		err = s.refreshAWSClients()
+		if err != nil {
+			return microerror.Mask(err)
+		}
 		err = s.deleteVintageASGGroups(tcnpAsgFilters(mp.Name))
 		if err != nil {
 			return microerror.Mask(err)

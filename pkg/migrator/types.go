@@ -18,11 +18,11 @@ type Metadata struct {
 }
 
 type ControlPlane struct {
-	AdditionalSecurityGroupID string              `yaml:"additionalSecurityGroupID"`
-	ApiExtraArgs              map[string]string   `yaml:"apiExtraArgs"`
-	ApiExtraCertSans          []string            `yaml:"apiExtraCertSANs"`
-	InstanceType              string              `yaml:"instanceType"`
-	SubnetTags                []map[string]string `yaml:"subnetTags"`
+	AdditionalSecurityGroups []SecurityGroup     `yaml:"additionalSecurityGroups"`
+	ApiExtraArgs             map[string]string   `yaml:"apiExtraArgs"`
+	ApiExtraCertSans         []string            `yaml:"apiExtraCertSANs"`
+	InstanceType             string              `yaml:"instanceType"`
+	SubnetTags               []map[string]string `yaml:"subnetTags"`
 }
 
 type Internal struct {
@@ -38,19 +38,27 @@ type Migration struct {
 }
 
 type File struct {
-	Path       string `yaml:"path"`
-	SecretName string `yaml:"secretName"`
-	SecretKey  string `yaml:"secretKey"`
+	ContentFrom ContentFrom `yaml:"contentFrom"`
+	Path        string      `yaml:"path"`
+	Permissions string      `yaml:"permissions"`
+}
+
+type ContentFrom struct {
+	Secret Secret `yaml:"secret"`
+}
+type Secret struct {
+	Name string `yaml:"name"`
+	Key  string `yaml:"key"`
 }
 
 type NodePool struct {
-	AdditionalSecurityGroupID string              `yaml:"additionalSecurityGroupID"`
-	AvailabilityZones         []string            `yaml:"availabilityZones"`
-	InstanceType              string              `yaml:"instanceType"`
-	MinSize                   int                 `yaml:"minSize"`
-	MaxSize                   int                 `yaml:"maxSize"`
-	RootVolumeSizeGB          int                 `yaml:"rootVolumeSizeGB"`
-	SubnetTags                []map[string]string `yaml:"subnetTags"`
+	AdditionalSecurityGroups []SecurityGroup     `yaml:"additionalSecurityGroups"`
+	AvailabilityZones        []string            `yaml:"availabilityZones"`
+	InstanceType             string              `yaml:"instanceType"`
+	MinSize                  int                 `yaml:"minSize"`
+	MaxSize                  int                 `yaml:"maxSize"`
+	RootVolumeSizeGB         int                 `yaml:"rootVolumeSizeGB"`
+	SubnetTags               []map[string]string `yaml:"subnetTags"`
 }
 
 type ProviderSpecific struct {
@@ -68,6 +76,10 @@ type Network struct {
 	Services          Services `yaml:"services"`
 	VPCID             string   `yaml:"vpcId"`
 	InternetGatewayID string   `yaml:"internetGatewayId"`
+}
+
+type SecurityGroup struct {
+	ID string `yaml:"id"`
 }
 
 type Pods struct {

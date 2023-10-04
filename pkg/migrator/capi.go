@@ -11,6 +11,7 @@ import (
 
 	awsarn "github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/fatih/color"
+	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -64,12 +65,20 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 
 func (s *Service) applyCAPICluster() error {
 	fmt.Printf("Applying CAPI cluster APP CR to MC\n")
-	c := exec.Command("kubectl", "--context", fmt.Sprintf("gs-%s", s.clusterInfo.MC.CapiMC), "apply", "-f", clusterAppYamlFile(s.clusterInfo.Name))
+	applyManifests := func() error {
+		c := exec.Command("kubectl", "--context", fmt.Sprintf("gs-%s", s.clusterInfo.MC.CapiMC), "apply", "-f", clusterAppYamlFile(s.clusterInfo.Name))
 
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
+		c.Stderr = os.Stderr
+		c.Stdin = os.Stdin
 
-	err := c.Run()
+		err := c.Run()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+
+	err := backoff.Retry(applyManifests, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -89,7 +98,14 @@ func (s *Service) cleanEtcdInKubeadmConfigMap(ctx context.Context) error {
 	// remove etcd cluster
 	configmap.Data["ClusterConfiguration"] = cleanEtcdInitialCluster(data)
 
-	err = s.clusterInfo.KubernetesControllerClient.Update(ctx, &configmap)
+	updateConfigmap := func() error {
+		err = s.clusterInfo.KubernetesControllerClient.Update(ctx, &configmap)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err = backoff.Retry(updateConfigmap, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}

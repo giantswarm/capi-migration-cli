@@ -10,6 +10,7 @@ import (
 	"github.com/fatih/color"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
 	"github.com/giantswarm/apiextensions/v6/pkg/label"
+	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/k8smetadata/pkg/annotation"
 	"github.com/giantswarm/microerror"
 	v1apps "k8s.io/api/apps/v1"
@@ -198,17 +199,26 @@ func scaleDownVintageAppOperator(ctx context.Context, k8sClient client.Client, c
 	return nil
 }
 
-func deleteCapiAppOperatorPod(ctx context.Context, k8sClient client.Client, clusterName string) error {
+func (s *Service) deleteCapiAppOperatorPod(ctx context.Context, k8sClient client.Client, clusterName string) error {
 	// fetch app-operator deployment named app-operator-CLUSTER_NAME in namespace clusterName
 	var podList v1.PodList
-	err := k8sClient.List(ctx, &podList, client.MatchingLabels{"app.kubernetes.io/instance": fmt.Sprintf("%s-app-operator", clusterName)})
+	listPods := func() error {
+		err := k8sClient.List(ctx, &podList, client.MatchingLabels{"app.kubernetes.io/instance": fmt.Sprintf("%s-app-operator", clusterName)})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(listPods, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	for _, pod := range podList.Items {
 		// delete the pod
-		err = k8sClient.Delete(ctx, &pod) //gosec:ignore=G601
+		//nolint:gosec
+		err = k8sClient.Delete(ctx, &pod) //nolint:gosec
+
 		if apierrors.IsNotFound(err) {
 			// vanished, lets continue
 		} else if err != nil {
@@ -287,7 +297,7 @@ func getClusterServiceCidrBlock(ctx context.Context, k8sClient client.Client, cr
 
 // drainVintageNodes drains all vintage nodes of specific role
 func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingLabels) error {
-	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
+	nodes, err := s.getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -316,7 +326,14 @@ func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingL
 
 			fmt.Printf("Started draining node %s\n", node.Name)
 
-			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+			cordonNodes := func() error {
+				err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+				if err != nil {
+					return microerror.Mask(err)
+				}
+				return nil
+			}
+			err = backoff.Retry(cordonNodes, s.backOff)
 			if err != nil {
 				fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
 			}
@@ -337,7 +354,7 @@ func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingL
 
 // cordonVintageNodes cordons all vintage nodes of specific role
 func (s *Service) cordonVintageNodes(ctx context.Context, labels client.MatchingLabels) error {
-	nodes, err := getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
+	nodes, err := s.getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -358,7 +375,14 @@ func (s *Service) cordonVintageNodes(ctx context.Context, labels client.Matching
 	}
 
 	for i := range nodes {
-		err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &nodes[i], true)
+		cordonNodes := func() error {
+			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &nodes[i], true)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(cordonNodes, s.backOff)
 		if err != nil {
 			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", nodes[i].Name, err.Error())
 		}
@@ -367,9 +391,16 @@ func (s *Service) cordonVintageNodes(ctx context.Context, labels client.Matching
 }
 
 // getVintageNodes returns all nodes with AWSOperatorVersionLabel label
-func getVintageNodes(ctx context.Context, k8sClient client.Client, labels client.MatchingLabels) ([]v1.Node, error) {
+func (s *Service) getVintageNodes(ctx context.Context, k8sClient client.Client, labels client.MatchingLabels) ([]v1.Node, error) {
 	var nodes v1.NodeList
-	err := k8sClient.List(ctx, &nodes, labels)
+	listNodes := func() error {
+		err := k8sClient.List(ctx, &nodes, labels)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(listNodes, s.backOff)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -388,17 +419,31 @@ func getVintageNodes(ctx context.Context, k8sClient client.Client, labels client
 func (s *Service) deleteChartOperatorPods(ctx context.Context) error {
 	// fetch chart-operator pod
 	var pods v1.PodList
-	err := s.clusterInfo.KubernetesControllerClient.List(ctx, &pods, client.MatchingLabels{"app": "chart-operator"}, client.InNamespace("giantswarm"))
+	listPods := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &pods, client.MatchingLabels{"app": "chart-operator"}, client.InNamespace("giantswarm"))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(listPods, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	for i := range pods.Items {
 		// delete the pod
-		err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pods.Items[i])
-		if apierrors.IsNotFound(err) {
-			// vanished, lets continue
-		} else if err != nil {
+		deletePod := func() error {
+			err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pods.Items[i])
+			if apierrors.IsNotFound(err) {
+				// vanished, lets continue
+			} else if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(deletePod, s.backOff)
+		if err != nil {
 			return microerror.Mask(err)
 		}
 		fmt.Printf("Deleted pod %s/%s to reschedule it on CAPI control plane node\n", pods.Items[i].Namespace, pods.Items[i].Name)
@@ -412,7 +457,14 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 	color.Yellow("Removing static manifests for control-plane components on all vintage nodes.")
 	// fetch all master nodes
 	var nodes v1.NodeList
-	err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodes, client.MatchingLabels{"node-role.kubernetes.io/master": ""})
+	listNodes := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &nodes, client.MatchingLabels{"node-role.kubernetes.io/master": ""})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(listNodes, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -425,8 +477,14 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 			continue
 		}
 		job := templates.CleanManifestsJob(node.Name)
-
-		err = s.clusterInfo.KubernetesControllerClient.Create(ctx, &job)
+		createJob := func() error {
+			err = s.clusterInfo.KubernetesControllerClient.Create(ctx, &job)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(createJob, s.backOff)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -440,14 +498,11 @@ func (s *Service) stopVintageControlPlaneComponents(ctx context.Context) error {
 		for {
 			var job batchv1.Job
 			err = s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: jobList[i].Name, Namespace: jobList[i].Namespace}, &job)
-			if apierrors.IsNotFound(err) {
-				// job is still being created
+			if err != nil {
+				fmt.Printf("faild to get Job, retrying in 5 spec")
 				time.Sleep(time.Second * 5)
 				continue
-			} else if err != nil {
-				return microerror.Mask(err)
 			}
-
 			if job.Status.Succeeded == 1 {
 				fmt.Printf("Job %d/%d - %s finished.\n", i+1, len(jobList), job.Name)
 				break
