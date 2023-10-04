@@ -275,7 +275,7 @@ func (s *Service) CleanVintageCluster(ctx context.Context) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		color.Yellow("Deleting vintage  %s node pool ASG.\n", mp.Name)
+		color.Yellow("Deleting vintage %s node pool ASG.\n", mp.Name)
 		err = s.refreshAWSClients()
 		if err != nil {
 			return microerror.Mask(err)

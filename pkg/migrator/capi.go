@@ -245,6 +245,7 @@ func (s *Service) waitForKubeadmControlPlaneReady(ctx context.Context) error {
 			fmt.Printf("\nall control plane replicas are ready and up to date\n")
 			return nil
 		} else {
+			time.Sleep(time.Second * 5)
 			fmt.Printf(".")
 		}
 	}

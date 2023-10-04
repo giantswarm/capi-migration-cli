@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.44.0-534bfdecd921b15c7306dbdfcd665d180aeb405f"
-	ClusterAppCatalog  = "cluster-test"
-	DefaultAppsVersion = "0.32.0"
+	ClusterAppVersion  = "0.45.0"
+	ClusterAppCatalog  = "cluster"
+	DefaultAppsVersion = "0.34.0"
 	DefaultAppsCatalog = "cluster"
 
 	DefaultAppsAWSRepoName = "default-apps-aws"

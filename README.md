@@ -3,8 +3,11 @@
 
 # capi-migration-cli
 
-### Requirements
+### Requirements for migration specific WC
 - there has to be pre-created AWS IAM role of the WC AWSAccount called `giantswarm-{CAPI_MC_NAME}-capa-controller`
+
+### Requirements to run the tool
+- full working `opsctl credentials aws -i MC -c WC` without extra config.
 
 This tools executed folowing steps
 ### Steps:
