@@ -66,6 +66,7 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 func (s *Service) applyCAPICluster() error {
 	fmt.Printf("Applying CAPI cluster APP CR to MC\n")
 	applyManifests := func() error {
+		//nolint:gosec
 		c := exec.Command("kubectl", "--context", fmt.Sprintf("gs-%s", s.clusterInfo.MC.CapiMC), "apply", "-f", clusterAppYamlFile(s.clusterInfo.Name))
 
 		c.Stderr = os.Stderr
