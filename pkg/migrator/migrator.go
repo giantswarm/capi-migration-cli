@@ -22,9 +22,10 @@ const (
 )
 
 type Service struct {
-	clusterInfo *cluster.Cluster
-	vintageCRs  *VintageCRs
-	app         AppInfo
+	clusterInfo    *cluster.Cluster
+	vintageCRs     *VintageCRs
+	app            AppInfo
+	workerBachSize int
 
 	// AWS Clients
 	ec2Client     *ec2.EC2
@@ -37,7 +38,8 @@ type Service struct {
 }
 
 type Config struct {
-	Config *cluster.Cluster
+	Config         *cluster.Cluster
+	WorkerBachSize int
 }
 
 type AppInfo struct {
@@ -56,7 +58,8 @@ func New(c Config) (*Service, error) {
 			DefaultAppsCatalog: DefaultAppsCatalog,
 			DefaultAppsVersion: DefaultAppsVersion,
 		},
-		backOff: backoff.NewMaxRetries(15, 5*time.Second),
+		backOff:        backoff.NewMaxRetries(15, 5*time.Second),
+		workerBachSize: c.WorkerBachSize,
 	}
 
 	r.CreateAWSClients(c.Config.AWSSession)
@@ -252,8 +255,14 @@ func (s *Service) CleanVintageCluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 	color.Yellow("Deleted vintage control plane ASGs.\n")
-	color.Green("Waiting 2 minutes for vintage CP nodes to cleanup.")
-	time.Sleep(time.Minute * 2)
+	err = s.waitForKubeadmControlPlaneReady(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	err = s.cordonAllVintageWorkerNodes(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	for _, mp := range s.vintageCRs.AwsMachineDeployments {
 		color.Yellow("Waiting for all CAPI nodes in node pool %s to be ready.", mp.Name)

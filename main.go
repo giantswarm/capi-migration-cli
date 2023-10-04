@@ -118,7 +118,8 @@ func mainE(ctx context.Context) error {
 	var migratorService *migrator.Service
 	{
 		c := migrator.Config{
-			Config: configService,
+			Config:         configService,
+			WorkerBachSize: flags.WorkerNodeDrainBatchSize,
 		}
 
 		migratorService, err = migrator.New(c)
@@ -160,6 +161,8 @@ func mainE(ctx context.Context) error {
 		fmt.Printf("Failed to clean vintage cluster\n")
 		return microerror.Mask(err)
 	}
+
+	color.Blue("Finished migrating cluster %s to CAPI infrastructure\n", flags.ClusterName)
 
 	return nil
 }

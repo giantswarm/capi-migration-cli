@@ -21,6 +21,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 	"k8s.io/client-go/tools/clientcmd"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
+	kubeadmv1beta1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -32,6 +33,8 @@ func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = capi.AddToScheme(scheme)
 	_ = giantswarmawsalpha3.AddToScheme(scheme)
+	_ = kubeadmv1beta1.AddToScheme(scheme)
+
 }
 
 type Config struct {

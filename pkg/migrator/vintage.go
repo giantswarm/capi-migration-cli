@@ -17,6 +17,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/drain"
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -295,6 +296,29 @@ func getClusterServiceCidrBlock(ctx context.Context, k8sClient client.Client, cr
 	return awsConfigData.Installation.V1.Guest.Kubernetes.API.ClusterIPRange, nil
 }
 
+func (s *Service) cordonAllVintageWorkerNodes(ctx context.Context) error {
+	nodes, err := s.getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, allVintageNodePoolNodeLabels())
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	nodeShutdownHelper := getNodeShutdownHelper(ctx, s.clusterInfo.KubernetesClientSet)
+
+	for _, node := range nodes {
+		cordonNodes := func() error {
+			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(cordonNodes, s.backOff)
+		if err != nil {
+			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
+		}
+	}
+	return nil
+}
+
 // drainVintageNodes drains all vintage nodes of specific role
 func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingLabels) error {
 	nodes, err := s.getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, labels)
@@ -303,49 +327,47 @@ func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingL
 	}
 	fmt.Printf("Found %d nodes for draining\n", len(nodes))
 
-	nodeShutdownHelper := drain.Helper{
-		Ctx:                             ctx,                               // pass the current context
-		Client:                          s.clusterInfo.KubernetesClientSet, // the k8s client for making the API calls
-		Force:                           true,                              // forcing the draining
-		GracePeriodSeconds:              60,                                // 60 seconds of timeout before deleting the pod
-		IgnoreAllDaemonSets:             true,                              // ignore the daemonsets
-		Timeout:                         5 * time.Minute,                   // give a 5 minutes timeout
-		DeleteEmptyDirData:              true,                              // delete all the emptyDir volumes
-		DisableEviction:                 false,                             // we want to evict and not delete. (might be different for the master nodes)
-		SkipWaitForDeleteTimeoutSeconds: 15,                                // in case a node is NotReady then the pods won't be deleted, so don't wait too long
-		Out:                             os.Stdout,
-		ErrOut:                          os.Stderr,
-	}
-	var wg sync.WaitGroup
-	// Loop through the list of nodes
-	for _, node := range nodes {
-		wg.Add(1)
+	nodeShutdownHelper := getNodeShutdownHelper(ctx, s.clusterInfo.KubernetesClientSet)
 
-		go func(node v1.Node) {
+	for _, node := range nodes {
+		cordonNodes := func() error {
+			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			return nil
+		}
+		err = backoff.Retry(cordonNodes, s.backOff)
+		if err != nil {
+			fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
+		}
+	}
+
+	// create workerBachSize number of goroutines to drain the nodes
+	// drain is blocking so we need to run it in parallel
+	nodeChannel := make(chan v1.Node, len(nodes))
+	var wg sync.WaitGroup
+	for i := 0; i < s.workerBachSize; i++ {
+		wg.Add(1)
+		go func(nodeChan chan v1.Node) {
 			defer wg.Done()
 
-			fmt.Printf("Started draining node %s\n", node.Name)
+			for node := range nodeChan {
 
-			cordonNodes := func() error {
-				err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
+				fmt.Printf("Started draining node %s\n", node.Name)
+				err = drain.RunNodeDrain(&nodeShutdownHelper, node.Name)
 				if err != nil {
-					return microerror.Mask(err)
+					fmt.Printf("ERRROR: failed to drain node %s, reason: %s\n", node.Name, err.Error())
 				}
-				return nil
-			}
-			err = backoff.Retry(cordonNodes, s.backOff)
-			if err != nil {
-				fmt.Printf("ERRROR: failed cordon node %s, reason: %s\n", node.Name, err.Error())
+				color.Yellow("Finished draining node %s", node.Name)
 			}
 
-			err = drain.RunNodeDrain(&nodeShutdownHelper, node.Name)
-			if err != nil {
-				fmt.Printf("ERRROR: failed to drain node %s, reason: %s\n", node.Name, err.Error())
-			}
-			color.Yellow("Finished draining node %s", node.Name)
-
-		}(node)
+		}(nodeChannel)
 	}
+	for _, node := range nodes {
+		nodeChannel <- node
+	}
+	close(nodeChannel)
 
 	// Wait for all goroutines to finish
 	wg.Wait()
@@ -360,19 +382,7 @@ func (s *Service) cordonVintageNodes(ctx context.Context, labels client.Matching
 	}
 	fmt.Printf("Found %d nodes for cordoning\n", len(nodes))
 
-	nodeShutdownHelper := drain.Helper{
-		Ctx:                             ctx,                               // pass the current context
-		Client:                          s.clusterInfo.KubernetesClientSet, // the k8s client for making the API calls
-		Force:                           true,                              // forcing the draining
-		GracePeriodSeconds:              60,                                // 60 seconds of timeout before deleting the pod
-		IgnoreAllDaemonSets:             true,                              // ignore the daemonsets
-		Timeout:                         5 * time.Minute,                   // give a 5 minutes timeout
-		DeleteEmptyDirData:              true,                              // delete all the emptyDir volumes
-		DisableEviction:                 false,                             // we want to evict and not delete. (might be different for the master nodes)
-		SkipWaitForDeleteTimeoutSeconds: 15,                                // in case a node is NotReady then the pods won't be deleted, so don't wait too long
-		Out:                             os.Stdout,
-		ErrOut:                          os.Stderr,
-	}
+	nodeShutdownHelper := getNodeShutdownHelper(ctx, s.clusterInfo.KubernetesClientSet)
 
 	for i := range nodes {
 		cordonNodes := func() error {
@@ -538,9 +548,31 @@ func controlPlaneNodeLabels() client.MatchingLabels {
 	return client.MatchingLabels{"node-role.kubernetes.io/control-plane": ""}
 }
 
+func allVintageNodePoolNodeLabels() client.MatchingLabels {
+	return client.MatchingLabels{
+		"node-role.kubernetes.io/worker": "",
+	}
+}
+
 func vintageNodePoolNodeLabels(nodePoolName string) client.MatchingLabels {
 	return client.MatchingLabels{
 		"node-role.kubernetes.io/worker":   "",
 		"giantswarm.io/machine-deployment": nodePoolName,
+	}
+}
+
+func getNodeShutdownHelper(ctx context.Context, client kubernetes.Interface) drain.Helper {
+	return drain.Helper{
+		Ctx:                             ctx,             // pass the current context
+		Client:                          client,          // the k8s client for making the API calls
+		Force:                           true,            // forcing the draining
+		GracePeriodSeconds:              60,              // 60 seconds of timeout before deleting the pod
+		IgnoreAllDaemonSets:             true,            // ignore the daemonsets
+		Timeout:                         5 * time.Minute, // give a 5 minutes timeout
+		DeleteEmptyDirData:              true,            // delete all the emptyDir volumes
+		DisableEviction:                 false,           // we want to evict and not delete. (might be different for the master nodes)
+		SkipWaitForDeleteTimeoutSeconds: 15,              // in case a node is NotReady then the pods won't be deleted, so don't wait too long
+		Out:                             os.Stdout,
+		ErrOut:                          os.Stderr,
 	}
 }

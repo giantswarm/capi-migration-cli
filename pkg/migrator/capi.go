@@ -17,6 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubeadmv1beta1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -226,5 +227,25 @@ func (s *Service) waitForCapiNodesReady(ctx context.Context, labels client.Match
 		fmt.Printf(".")
 		time.Sleep(time.Second * 10)
 		counter += 10
+	}
+}
+
+func (s *Service) waitForKubeadmControlPlaneReady(ctx context.Context) error {
+	color.Green("Waiting for all control plane replicas to be up to date and ready.")
+	for {
+		var cp kubeadmv1beta1.KubeadmControlPlane
+		err := s.clusterInfo.MC.CapiKubernetesClient.Get(ctx, client.ObjectKey{Name: s.clusterInfo.Name, Namespace: s.clusterInfo.Namespace}, &cp)
+		if err != nil {
+			fmt.Printf("failed to get kubeadmControlPlane CR, retrying in 5 sec")
+			time.Sleep(time.Second * 5)
+		}
+		replicas := *cp.Spec.Replicas
+
+		if cp.Status.Ready && cp.Status.Replicas == replicas && cp.Status.ReadyReplicas == replicas && cp.Status.UpdatedReplicas == replicas {
+			fmt.Printf("\nall control plane replicas are ready and up to date\n")
+			return nil
+		} else {
+			fmt.Printf(".")
+		}
 	}
 }
