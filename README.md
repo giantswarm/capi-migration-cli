@@ -19,6 +19,19 @@ export KUBECONFIG=$(mktemp)
 chmod 600 $KUBECONFIG
 ```
 
+### exmaples how to run the tool
+
+```
+## migrate cluster xyz123 from gauss to golem
+./capi-migration-cli --mc-capi golem --mc-vintage gauss --cluster-namespace org-giantswarm --cluster-name xyz123
+
+## migrate cluster xyz123 from gauss to golem , set the worker drain batch size to 6 (drain 5 workers at the same time, usefull for big clusters)
+./capi-migration-cli --mc-capi golem --mc-vintage gauss --cluster-namespace org-giantswarm --cluster-name xyz123 --worker-node-drain-batch-size 5
+```
+
+### Additional notes
+*  The tool uses `opsctl credentials aws` to generate AWS access keys, these keys are only valid for 15 minutes. It usually happens that the keys expire duing the run. The tool will detect expired keys and will try generate a new set of keys, this will require additional entry of you MFA token. You should watch the oputput and react to it.
+
 This tools executed folowing steps
 ### Steps:
 
@@ -56,6 +69,8 @@ This tools executed folowing steps
   * cordon all vintage Control-planes to avoid scheduling new pods there
   * delete app operator pod on the CAPI MC to force new reconcilation to speed up app installation (for new apps like capi-node-labeler)
   * delete chart-operator pod in the WC to reschedule it on the new CAPI control-plane node
+  * delete all cilium pods in the WC to ensure fast update fo the helm release (to skip waiting for one by one roll), this is necessery to force running post upgrde helm jobs for policies
+  * start a background goroutine that will force-restart any crashed cilium pod, which can ensure CNI is undisturbed
   * wait until all(3) CAPI control plane nodes join the cluster and are in Ready state
 
 * Clean Vintage Cluster Phase
