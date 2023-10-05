@@ -237,6 +237,14 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	// clean old cilium pods
+	err = s.forceDeleteOldCiliumPods(ctx)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	// cleanup crashing cilium pods, sometimes they still run with old config which causes issues that are fixed by restarting them
+	go s.deleteCrashingCiliumPods(ctx)
+
 	// wait for all CAPI control plane nodes to be ready
 	err = s.waitForCapiControlPlaneNodesReady(ctx, 3)
 	if err != nil {

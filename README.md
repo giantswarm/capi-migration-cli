@@ -6,10 +6,13 @@
 ### Requirements for migration specific WC
 - there has to be pre-created AWS IAM role of the WC AWSAccount called `giantswarm-{CAPI_MC_NAME}-capa-controller`
 
+### Recomendation for the migration
+- Before migration, upscale the master node size to 2-3x actual size to make sure API server can handle the load during migration as there might be 1 node to handle the traffic at certain point of time.
+
 ### Requirements to run the tool
 - full working `opsctl credentials aws -i MC -c WC` without extra config.
 
-### Recomendation
+### Recomendation to run the tool
 To ensure there are no interference with kubeconfigs that the tool uses, create a new temporary file for kubeconfig.
 ```
 export KUBECONFIG=$(mktemp)

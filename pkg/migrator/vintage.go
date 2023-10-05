@@ -254,6 +254,69 @@ func (s *Service) cleanLegacyChart(ctx context.Context, chartName string) error 
 	return nil
 }
 
+// forceDeleteOldCiliumPods to speed up helmRelease upgrade which is needed to complete in order to install proper default network policies  which is done in post-install job
+func (s *Service) forceDeleteOldCiliumPods(ctx context.Context) error {
+	var podList v1.PodList
+	listPods := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &podList, client.MatchingLabels{"app.kubernetes.io/part-of": "cilium"})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(listPods, s.backOff)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	deletePods := func() error {
+		for _, pod := range podList.Items {
+			// delete the pod
+			//nolint:gosec
+			err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pod)
+
+			if apierrors.IsNotFound(err) {
+				// vanished, lets continue
+			} else if err != nil {
+				return microerror.Mask(err)
+			} else {
+				fmt.Printf("Deleted pod %s/%s\n", pod.Namespace, pod.Name)
+			}
+		}
+		return nil
+	}
+	err = backoff.Retry(deletePods, s.backOff)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	return nil
+}
+
+func (s *Service) deleteCrashingCiliumPods(ctx context.Context) {
+
+	for {
+		var podList v1.PodList
+		err := s.clusterInfo.KubernetesControllerClient.List(ctx, &podList, client.MatchingLabels{"app.kubernetes.io/part-of": "cilium"})
+		if err != nil {
+			fmt.Printf("failed to list crashed pods for cilium: %s\n", err.Error())
+		} else {
+			for _, pod := range podList.Items {
+				for _, status := range pod.Status.ContainerStatuses {
+					if status.RestartCount > 0 {
+						err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pod)
+						if err == nil {
+							fmt.Printf("Deleted crashed pod %s/%s\n", pod.Namespace, pod.Name)
+						}
+					}
+				}
+			}
+		}
+
+		time.Sleep(time.Second * 5)
+	}
+
+}
+
 func (s *Service) deleteCapiAppOperatorPod(ctx context.Context, k8sClient client.Client, clusterName string) error {
 	// fetch app-operator deployment named app-operator-CLUSTER_NAME in namespace clusterName
 	var podList v1.PodList

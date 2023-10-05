@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.45.0"
-	ClusterAppCatalog  = "cluster"
+	ClusterAppVersion  = "0.45.0-5bae2bc26480f6ffdab46d9bc60c6c2b75da029d"
+	ClusterAppCatalog  = "cluster-test"
 	DefaultAppsVersion = "0.34.0"
 	DefaultAppsCatalog = "cluster"
 
