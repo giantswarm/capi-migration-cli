@@ -117,6 +117,15 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 		fmt.Printf("Successfully scaled down Vintage app operator deployment.\n")
 	}
 
+	// clean legacy charts
+	charts := []string{"cilium", "aws-ebs-csi-driver", "aws-cloud-controller-manager", "coredns", "vertical-pod-autoscaler-crd"}
+	for _, chart := range charts {
+		err = s.cleanLegacyChart(ctx, chart)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
 	color.Green("Preparation phase completed.\n\n")
 
 	return nil

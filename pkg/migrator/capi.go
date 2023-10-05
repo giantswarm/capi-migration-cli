@@ -231,7 +231,7 @@ func (s *Service) waitForCapiNodesReady(ctx context.Context, labels client.Match
 }
 
 func (s *Service) waitForKubeadmControlPlaneReady(ctx context.Context) error {
-	color.Green("Waiting for all control plane replicas to be up to date and ready.")
+	color.Green("Waiting KubeadmControlPlane to stabilise  (all replicas to be up to date and ready).")
 	for {
 		var cp kubeadmv1beta1.KubeadmControlPlane
 		err := s.clusterInfo.MC.CapiKubernetesClient.Get(ctx, client.ObjectKey{Name: s.clusterInfo.Name, Namespace: s.clusterInfo.Namespace}, &cp)
@@ -242,7 +242,7 @@ func (s *Service) waitForKubeadmControlPlaneReady(ctx context.Context) error {
 		replicas := *cp.Spec.Replicas
 
 		if cp.Status.Ready && cp.Status.Replicas == replicas && cp.Status.ReadyReplicas == replicas && cp.Status.UpdatedReplicas == replicas {
-			fmt.Printf("\nall control plane replicas are ready and up to date\n")
+			fmt.Printf("\nKubeadmControlPlane is stabilised.\n")
 			return nil
 		} else {
 			time.Sleep(time.Second * 5)

@@ -12,7 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/fatih/color"
+	chart "github.com/giantswarm/apiextensions-application/api/v1alpha1"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
+
 	"github.com/giantswarm/microerror"
 	vaultapi "github.com/hashicorp/vault/api"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +36,7 @@ func init() {
 	_ = capi.AddToScheme(scheme)
 	_ = giantswarmawsalpha3.AddToScheme(scheme)
 	_ = kubeadmv1beta1.AddToScheme(scheme)
-
+	_ = chart.AddToScheme(scheme)
 }
 
 type Config struct {

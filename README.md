@@ -9,6 +9,13 @@
 ### Requirements to run the tool
 - full working `opsctl credentials aws -i MC -c WC` without extra config.
 
+### Recomendation
+To ensure there are no interference with kubeconfigs that the tool uses, create a new temporary file for kubeconfig.
+```
+export KUBECONFIG=$(mktemp)
+chmod 600 $KUBECONFIG
+```
+
 This tools executed folowing steps
 ### Steps:
 
@@ -29,6 +36,7 @@ This tools executed folowing steps
   * migrate aws credentials for the cluster by create a AWSClusterRoleIdentity in the CAPI MC
   * disable machine health check on the Vintage CRs to avoid aws-operator to terminate nodes during migration
   * scale down app operator for the migrated WC on the vintage MC to avoid issues of overwriting apps
+  * clean up charts for `cilium`,`coredns`,`vertical-pod-autoscaler-crd`,`aws-ebs-csi-driver`,`aws-cloud-controller-manager` as in CAPI they are managed by `HelmRelease` CR and not by App or Chart CR. THis operation add pause annotation on the chart and remove finalizers and them delete its , leaving app deployed.
 
 * [optional] Stop Vintage CR reconciliation
   * [optional part - needs to be set via flag] 
@@ -50,6 +58,7 @@ This tools executed folowing steps
 * Clean Vintage Cluster Phase
   * drain all vintage control-plane nodes
   * delete vintage ASG groups for control-plane nodes (tccpn) and terminate all instances in that ASG groups
+  *  before migrating workloads wait until KubeadmControlPlane CR stabilises which means  all replicas are up to date and ready
   * sequentially for each node pool:
     * drain all vintage worker nodes for the nodepool
     * delete all vintage ASGs for the nodepool

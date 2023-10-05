@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	chart "github.com/giantswarm/apiextensions-application/api/v1alpha1"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
 	"github.com/giantswarm/apiextensions/v6/pkg/label"
 	"github.com/giantswarm/backoff"
@@ -28,6 +29,7 @@ import (
 
 const (
 	AWSOperatorVersionLabel = "aws-operator.giantswarm.io/version"
+	ChartOperatorPaused     = "chart-operator.giantswarm.io/paused"
 )
 
 type VintageCRs struct {
@@ -197,6 +199,58 @@ func scaleDownVintageAppOperator(ctx context.Context, k8sClient client.Client, c
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	return nil
+}
+
+// cleanLegacyChart will remove the chart without removing the app
+// this is necessary for certain apps that got migrated to helm release (ie CNI, CPI, ...)
+func (s *Service) cleanLegacyChart(ctx context.Context, chartName string) error {
+	var chartCR chart.Chart
+	fetchChart := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.Get(ctx, client.ObjectKey{Name: chartName, Namespace: "giantswarm"}, &chartCR)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(fetchChart, s.backOff)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// remove all finalizers
+	chartCR.Finalizers = nil
+	// add paused annotation
+	if chartCR.Annotations == nil {
+		chartCR.Annotations = map[string]string{}
+	}
+	chartCR.Annotations[ChartOperatorPaused] = "true"
+	updateChart := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.Update(ctx, &chartCR)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err = backoff.Retry(updateChart, s.backOff)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	// delete the chart
+	deleteChart := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.Delete(ctx, &chartCR)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err = backoff.Retry(deleteChart, s.backOff)
+	if err != nil {
+
+	}
+
+	fmt.Printf("Cleaned legacy chart %s\n", chartName)
 	return nil
 }
 
