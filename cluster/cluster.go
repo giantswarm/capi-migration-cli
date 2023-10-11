@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -14,6 +15,7 @@ import (
 	"github.com/fatih/color"
 	chart "github.com/giantswarm/apiextensions-application/api/v1alpha1"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
+	"github.com/giantswarm/backoff"
 
 	"github.com/giantswarm/microerror"
 	vaultapi "github.com/hashicorp/vault/api"
@@ -67,6 +69,7 @@ type ManagementCluster struct {
 }
 
 func New(c Config) (*Cluster, error) {
+	b := backoff.NewMaxRetries(5, 10*time.Second)
 	color.Yellow("Checking kubernetes client for Vintage MC %s.", c.MCVintage)
 	vintageKubernetesClient, _, err := loginOrReuseKubeconfig([]string{c.MCVintage})
 	if err != nil {
@@ -85,14 +88,15 @@ func New(c Config) (*Cluster, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	color.Yellow("Generating AWS credentials for cluster %s/%s.", c.MCVintage, c.ClusterName)
 	var clusterRegion string
 	var awsSession *session.Session
-	{
+
+	generateAWSCreds := func() error {
+		color.Yellow("Generating AWS credentials for cluster %s/%s.", c.MCVintage, c.ClusterName)
 		var awsCredentials *credentials.Credentials
 		awsCredentials, clusterRegion, err = getAWSCredentials(c.MCVintage, c.ClusterName)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 
 		// test credentials
@@ -101,22 +105,28 @@ func New(c Config) (*Cluster, error) {
 			Credentials: awsCredentials,
 		})
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 		stsClient := sts.New(awsSession, &aws.Config{Region: aws.String(clusterRegion)})
 		identity, err := stsClient.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 		fmt.Printf("Generated AWS credentials for %s\n", *identity.Arn)
+		return nil
+	}
+	err = backoff.Retry(generateAWSCreds, b)
+	if err != nil {
+		color.Red("Failed to generate AWS Credentials")
+		return nil, microerror.Mask(err)
 	}
 
-	color.Yellow("Checking %s's vault connection", c.MCVintage)
 	var vaultClient *vaultapi.Client
-	{
+	createVaultClient := func() error {
+		color.Yellow("Checking %s's vault connection", c.MCVintage)
 		addr, token, caPath, err := getVaultInfo(c.MCVintage)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 		vc := vaultapi.DefaultConfig()
 		vc.Address = addr
@@ -124,21 +134,26 @@ func New(c Config) (*Cluster, error) {
 			CAPath: caPath,
 		})
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 		vaultClient, err = vaultapi.NewClient(vc)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 		vaultClient.SetToken(token)
 
 		// Check vault connectivity.
 		healthStatus, err := vaultClient.Sys().Health()
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return microerror.Mask(err)
 		}
 		fmt.Printf("Connected to vault %s\n", healthStatus.Version)
-
+		return nil
+	}
+	err = backoff.Retry(createVaultClient, b)
+	if err != nil {
+		color.Red("Failed to connect to vault")
+		return nil, microerror.Mask(err)
 	}
 
 	color.Green("Init phase finished.\n\n")

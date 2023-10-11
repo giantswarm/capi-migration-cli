@@ -154,7 +154,7 @@ spec:
     name: ssl-certs-kubernetes`
 
 const AddExtraServiceAccountIssuersScript = `#!/bin/sh
-{{ $issuer:= range .ExtraServiceAccountIssuers }}
+{{ range $issuer := .ServiceAccountIssuers }}
 sed -i '/- --tls-private-key-file=\/etc\/kubernetes\/pki\/apiserver.key$/s/$/\n    - --service-account-issuer={{ $issuer }}/'
 {{ $issuer }}
 {{ end }}
