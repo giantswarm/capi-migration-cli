@@ -272,7 +272,7 @@ func (s *Service) cleanLegacyChart(ctx context.Context, chartName string) error 
 	}
 	err = backoff.Retry(deleteChart, s.backOff)
 	if err != nil {
-
+		return microerror.Mask(err)
 	}
 
 	fmt.Printf("Cleaned legacy chart %s\n", chartName)
@@ -328,6 +328,7 @@ func (s *Service) deleteCrashingCiliumPods(ctx context.Context) {
 			for _, pod := range podList.Items {
 				for _, status := range pod.Status.ContainerStatuses {
 					if status.RestartCount > 0 {
+						//nolint:gosec
 						err = s.clusterInfo.KubernetesControllerClient.Delete(ctx, &pod)
 						if err == nil {
 							fmt.Printf("Deleted crashed pod %s/%s\n", pod.Namespace, pod.Name)
@@ -447,6 +448,7 @@ func (s *Service) cordonAllVintageWorkerNodes(ctx context.Context) error {
 
 	for _, node := range nodes {
 		cordonNodes := func() error {
+			//nolint:gosec
 			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
 			if err != nil {
 				return microerror.Mask(err)
@@ -473,6 +475,7 @@ func (s *Service) drainVintageNodes(ctx context.Context, labels client.MatchingL
 
 	for _, node := range nodes {
 		cordonNodes := func() error {
+			//nolint:gosec
 			err := drain.RunCordonOrUncordon(&nodeShutdownHelper, &node, true)
 			if err != nil {
 				return microerror.Mask(err)
