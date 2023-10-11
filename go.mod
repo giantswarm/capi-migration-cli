@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/aws/aws-sdk-go v1.44.319
 	github.com/fatih/color v1.15.0
+	github.com/giantswarm/apiextensions-application v0.6.0
 	github.com/giantswarm/apiextensions/v6 v6.6.0
 	github.com/giantswarm/backoff v1.0.0
 	github.com/giantswarm/k8smetadata v0.21.0
@@ -41,7 +42,6 @@ require (
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/giantswarm/apiextensions-application v0.6.0 // indirect
 	github.com/giantswarm/micrologger v1.0.0 // indirect
 	github.com/giantswarm/release-operator/v4 v4.1.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
