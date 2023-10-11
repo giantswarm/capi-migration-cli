@@ -154,10 +154,9 @@ spec:
     name: ssl-certs-kubernetes`
 
 const AddExtraServiceAccountIssuersScript = `#!/bin/sh
-{{ range $issuer := .ServiceAccountIssuers }}
-sed -i '/- --tls-private-key-file=\/etc\/kubernetes\/pki\/apiserver.key$/s/$/\n    - --service-account-issuer={{ $issuer }}/'
-{{ $issuer }}
-{{ end }}
+{{- range $issuer := .ServiceAccountIssuers }}
+sed -i '/- --tls-private-key-file=\/etc\/kubernetes\/pki\/apiserver.key$/a\    - {{ $issuer }}' /etc/kubernetes/manifests/kube-apiserver.yaml 
+{{- end }}
 `
 
 const AppCRTemplate = `

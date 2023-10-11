@@ -203,7 +203,7 @@ func (s *Service) getExtraServiceAccountIssuers() ([]string, error) {
 
 	for _, command := range apiPods.Items[0].Spec.Containers[0].Command {
 		if strings.Contains(command, "--service-account-issuer=") {
-			accountIssuers = append(accountIssuers, strings.TrimPrefix(command, "--service-account-issuer="))
+			accountIssuers = append(accountIssuers, strings.ReplaceAll(command, "/", "\\/"))
 		}
 	}
 

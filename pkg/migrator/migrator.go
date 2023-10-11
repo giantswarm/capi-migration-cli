@@ -58,7 +58,7 @@ func New(c Config) (*Service, error) {
 			DefaultAppsCatalog: DefaultAppsCatalog,
 			DefaultAppsVersion: DefaultAppsVersion,
 		},
-		backOff:        backoff.NewMaxRetries(15, 5*time.Second),
+		backOff:        backoff.NewMaxRetries(15, 3*time.Second),
 		workerBachSize: c.WorkerBachSize,
 	}
 

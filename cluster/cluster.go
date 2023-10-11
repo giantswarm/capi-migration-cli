@@ -69,7 +69,7 @@ type ManagementCluster struct {
 }
 
 func New(c Config) (*Cluster, error) {
-	b := backoff.NewMaxRetries(5, 10*time.Second)
+	b := backoff.NewMaxRetries(5, 2*time.Second)
 	color.Yellow("Checking kubernetes client for Vintage MC %s.", c.MCVintage)
 	vintageKubernetesClient, _, err := loginOrReuseKubeconfig([]string{c.MCVintage})
 	if err != nil {
