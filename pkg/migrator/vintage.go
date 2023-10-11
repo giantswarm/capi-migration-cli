@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -183,6 +184,30 @@ func disableVintageHealthCheck(ctx context.Context, k8sClient client.Client, crs
 		return microerror.Mask(err)
 	}
 	return nil
+}
+
+func (s *Service) getExtraServiceAccountIssuers() ([]string, error) {
+	var accountIssuers []string
+	var apiPods v1.PodList
+	fetchApiPods := func() error {
+		err := s.clusterInfo.KubernetesControllerClient.List(context.Background(), &apiPods, client.MatchingLabels{"app.kubernetes.io/name": "api-server", "giantswarm.io/service-type": "system"})
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+	err := backoff.Retry(fetchApiPods, s.backOff)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	for _, command := range apiPods.Items[0].Spec.Containers[0].Command {
+		if strings.Contains(command, "--service-account-issuer=") {
+			accountIssuers = append(accountIssuers, strings.TrimPrefix(command, "--service-account-issuer="))
+		}
+	}
+
+	return accountIssuers, nil
 }
 
 func scaleDownVintageAppOperator(ctx context.Context, k8sClient client.Client, clusterName string) error {

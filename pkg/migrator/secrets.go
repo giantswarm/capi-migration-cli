@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	joinEtcdClusterScriptKey = "join-etcd-cluster"
-	moveEtcdLeaderScriptKey  = "move-etcd-leader"
-	apiHealthzVintagePodKey  = "api-healthz-vintage-pod"
+	joinEtcdClusterScriptKey      = "join-etcd-cluster"
+	moveEtcdLeaderScriptKey       = "move-etcd-leader"
+	apiHealthzVintagePodKey       = "api-healthz-vintage-pod"
+	addExtraServiceAccountIssuers = "add-extra-service-account-issuers"
 )
 
 // migrateCAsSecrets fetches CA private key from vault and save it to 'clusterID-ca` and 'clusterID-etcd' secret into CAPI MC
@@ -125,10 +126,17 @@ func (s *Service) migrateSASecret(ctx context.Context) error {
 
 // createScriptsSecret creates a secret that will be mounted as a file into control-plane in order to join the vintage etcd cluster
 func (s *Service) createScriptsSecret(ctx context.Context, baseDomain string) error {
+
+	extraServiceAccountIssuers, err := s.getExtraServiceAccountIssuers()
+	if err != nil {
+		return microerror.Mask(err)
+	}
 	params := struct {
-		ETCDEndpoint string
+		ETCDEndpoint          string
+		ServiceAccountIssuers []string
 	}{
-		ETCDEndpoint: etcdEndpointFromDomain(baseDomain, s.clusterInfo.Name),
+		ETCDEndpoint:          etcdEndpointFromDomain(baseDomain, s.clusterInfo.Name),
+		ServiceAccountIssuers: extraServiceAccountIssuers,
 	}
 
 	joinEtcdClusterContent, err := templates.RenderTemplate(templates.AWSJoinCluster, params)
@@ -145,6 +153,10 @@ func (s *Service) createScriptsSecret(ctx context.Context, baseDomain string) er
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	serviceAccountIssuerContent, err := templates.RenderTemplate(templates.AddExtraServiceAccountIssuersScript, params)
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -153,9 +165,10 @@ func (s *Service) createScriptsSecret(ctx context.Context, baseDomain string) er
 		},
 		Type: corev1.SecretTypeOpaque,
 		StringData: map[string]string{
-			apiHealthzVintagePodKey:  apiHealthzVintagePodContent,
-			joinEtcdClusterScriptKey: joinEtcdClusterContent,
-			moveEtcdLeaderScriptKey:  moveEtcdLeaderContent,
+			apiHealthzVintagePodKey:       apiHealthzVintagePodContent,
+			joinEtcdClusterScriptKey:      joinEtcdClusterContent,
+			moveEtcdLeaderScriptKey:       moveEtcdLeaderContent,
+			addExtraServiceAccountIssuers: serviceAccountIssuerContent,
 		},
 	}
 	err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, secret)

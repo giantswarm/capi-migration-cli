@@ -82,4 +82,5 @@ This tools executed folowing steps
     * delete all vintage ASGs for the nodepool
 
    
-
+## Cleaning clusters
+If the migration is only for testing you should delete the cluster in both MCs that measn triiger deletion vintage via happa and delete all genrated app CRs in CAPI MC.

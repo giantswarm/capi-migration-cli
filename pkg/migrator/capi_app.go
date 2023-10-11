@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.45.0-5bae2bc26480f6ffdab46d9bc60c6c2b75da029d"
-	ClusterAppCatalog  = "cluster-test"
+	ClusterAppVersion  = "0.45.0"
+	ClusterAppCatalog  = "cluster"
 	DefaultAppsVersion = "0.34.0"
 	DefaultAppsCatalog = "cluster"
 
@@ -127,6 +127,16 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 						Path:        "/etc/kubernetes/manifests/api-healthz-vintage-pod.yaml",
 						Permissions: "0644",
 					},
+					{
+						ContentFrom: ContentFrom{
+							Secret: Secret{
+								Name: customFilesSecretName(s.clusterInfo.Name),
+								Key:  addExtraServiceAccountIssuers,
+							},
+						},
+						Path:        "/migration/add-extra-service-account-issuers.sh",
+						Permissions: "0644",
+					},
 				},
 				ControlPlanePreKubeadmCommands: []string{
 					"iptables -A PREROUTING -t nat  -p tcp --dport 6443 -j REDIRECT --to-port 443 # route traffic from 6443 to 443",
@@ -134,6 +144,7 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 					"/bin/sh /migration/join-existing-cluster.sh",
 				},
 				ControlPlanePostKubeadmCommands: []string{
+					"/bin/sh /migration/add-extra-service-account-issuers.sh",
 					"/bin/sh /migration/move-etcd-leader.sh",
 				},
 				EtcdExtraArgs: map[string]string{

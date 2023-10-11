@@ -153,6 +153,13 @@ spec:
       path: /etc/kubernetes/pki
     name: ssl-certs-kubernetes`
 
+const AddExtraServiceAccountIssuersScript = `#!/bin/sh
+{{ $issuer:= range .ExtraServiceAccountIssuers }}
+sed -i '/- --tls-private-key-file=\/etc\/kubernetes\/pki\/apiserver.key$/s/$/\n    - --service-account-issuer={{ $issuer }}/'
+{{ $issuer }}
+{{ end }}
+`
+
 const AppCRTemplate = `
 {{- if .UserConfigConfigMap -}}
 ---
