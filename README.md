@@ -5,9 +5,10 @@
 
 ### Requirements for migration specific WC
 - there has to be pre-created AWS IAM role of the WC AWSAccount called `giantswarm-{CAPI_MC_NAME}-capa-controller`
+- cluster must be on release `>=19.2.0`
 
 ### Recomendation for the migration
-- Before migration, upscale the master node size to 2-3x actual size to make sure API server can handle the load during migration as there might be 1 node to handle the traffic at certain point of time.
+- Before the migration of customer cluster, upscale the master node size to 2-3x actual size to make sure API server can handle the load during migration as there might be 1 node to handle the traffic at certain point of time.
 
 ### Requirements to run the tool
 - full working `opsctl credentials aws -i MC -c WC` without extra config.

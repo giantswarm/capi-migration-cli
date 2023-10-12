@@ -16,11 +16,6 @@ import (
 	"github.com/giantswarm/capi-migration-cli/cluster"
 )
 
-const (
-	ControlPlaneRole = "control-plane"
-	WorkerRole       = "worker"
-)
-
 type Service struct {
 	clusterInfo    *cluster.Cluster
 	vintageCRs     *VintageCRs
@@ -186,7 +181,7 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	}
 
 	// the CAPI control plane nodes will roll out few times during the migration process
-	// so we run the function in goroutine to add them to the vintage ELBs to ensure there are always up-to-date
+	// so we run the function in background in goroutine to add them to the vintage ELBs to ensure ELB is always up-to-date
 	go func() {
 		for {
 			_ = s.addCAPIControlPlaneNodesToVintageELBs()
