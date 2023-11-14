@@ -38,7 +38,8 @@ type VintageCRs struct {
 	AwsControlPlane       *giantswarmawsalpha3.AWSControlPlane
 	AwsMachineDeployments []giantswarmawsalpha3.AWSMachineDeployment
 
-	Cluster *capi.Cluster
+	Cluster            *capi.Cluster
+	MachineDeployments []capi.MachineDeployment
 }
 
 // fetchVintageCRs fetches necessary CRs from vintage MC
@@ -63,12 +64,18 @@ func fetchVintageCRs(ctx context.Context, k8sClient client.Client, clusterName s
 		return nil, microerror.Mask(err)
 	}
 
+	machineDeployments, err := readMachineDeployments(ctx, k8sClient, clusterName)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	crs := &VintageCRs{
 		AwsCluster:            awsCluster,
 		AwsControlPlane:       awsControlPlane,
 		AwsMachineDeployments: awsMachineDeployments,
 
-		Cluster: cluster,
+		Cluster:            cluster,
+		MachineDeployments: machineDeployments,
 	}
 	return crs, nil
 }
@@ -91,6 +98,16 @@ func readCluster(ctx context.Context, k8sClient client.Client, clusterName strin
 
 	obj := objList.Items[0]
 	return &obj, nil
+}
+
+func readMachineDeployments(ctx context.Context, k8sClient client.Client, clusterName string) ([]capi.MachineDeployment, error) {
+	objList := &capi.MachineDeploymentList{}
+	selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
+	err := k8sClient.List(ctx, objList, selector)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return objList.Items, nil
 }
 
 func readAWSCluster(ctx context.Context, k8sClient client.Client, clusterName string) (*giantswarmawsalpha3.AWSCluster, error) {

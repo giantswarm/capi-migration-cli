@@ -190,6 +190,13 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 			SubnetTags:               buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
 		}
 	}
+	// check fro cgroups v1
+	for _, md := range s.vintageCRs.MachineDeployments {
+		if _, ok := md.Annotations["node.giantswarm.io/cgroupv1"]; ok {
+			data.Internal.CGroupsv1 = true
+			break
+		}
+	}
 
 	return data, nil
 }
