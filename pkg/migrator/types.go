@@ -26,6 +26,7 @@ type ControlPlane struct {
 }
 
 type Internal struct {
+	CGroupsv1 bool      `yaml:"cgroupsv1"`
 	Migration Migration `yaml:"migration"`
 }
 
