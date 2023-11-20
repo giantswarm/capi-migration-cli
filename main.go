@@ -137,6 +137,9 @@ func mainE(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+  // stop here to prevent real migration
+  //return microerror.Mask(fmt.Errorf("stop migration for test"))
+
 	if flags.StopVintageCrReconciliation {
 		err = migratorService.StopVintageReconciliation(ctx)
 		if err != nil {

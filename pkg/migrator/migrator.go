@@ -3,6 +3,8 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -11,6 +13,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/fatih/color"
 	"github.com/giantswarm/backoff"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/giantswarm/kubectl-gs/v2/pkg/template/app"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8syaml "sigs.k8s.io/yaml"
+
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/capi-migration-cli/cluster"
@@ -72,6 +81,15 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 		fmt.Printf("Failed to fetch vintage CRs.\n")
 		return microerror.Mask(err)
 	}
+
+	fmt.Printf("Migrating apps to CAPI MC\n")
+	err = s.migrateApps(ctx, s.clusterInfo.MC.VintageKubernetesClient)
+	if err != nil {
+		fmt.Printf("Failed to migrate apps.\n")
+		return microerror.Mask(err)
+	}
+
+
 	fmt.Printf("Migrating secrets to CAPI MC\n")
 	// migrate secrets
 	err = s.migrateSecrets(ctx)
@@ -113,18 +131,123 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 	}
 
 	// clean legacy charts
-	charts := []string{"cilium", "aws-ebs-csi-driver", "aws-cloud-controller-manager", "coredns", "vertical-pod-autoscaler-crd"}
-	for _, chart := range charts {
-		err = s.cleanLegacyChart(ctx, chart)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
+//	charts := []string{"cilium", "aws-ebs-csi-driver", "aws-cloud-controller-manager", "coredns", "vertical-pod-autoscaler-crd"}
+//	for _, chart := range charts {
+//		err = s.cleanLegacyChart(ctx, chart)
+//		if err != nil {
+//			return microerror.Mask(err)
+//		}
+//	}
 
 	color.Green("Preparation phase completed.\n\n")
 
 	return nil
 }
+
+func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) error {
+	//err := s.migrateNonDefaultApps(ctx)
+  
+  var numberOfAppsToMigrate int
+
+	f, err := os.OpenFile(nonDefaultAppYamlFile(s.clusterInfo.Name), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0640)
+
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+  for _,application := range s.vintageCRs.Apps {
+    // todo: first we get all apps now we skip them based on 
+    // catalog. better to filter them in the List() but not 
+    // possible bc/ filter?
+
+    if application.Spec.Catalog == "default" {
+      continue
+    }
+
+    numberOfAppsToMigrate += 1
+
+    // todo: app operator version label?
+    // todo: default labels missing?
+    newApp := app.Config{
+			AppName:                application.GetName(),
+      Cluster:                s.clusterInfo.Name,
+			Catalog:                application.Spec.Catalog,
+			Name:                   application.Spec.Name,
+			Namespace:              s.clusterInfo.Namespace,
+			Version:                application.Spec.Version,
+      InCluster:              application.Spec.KubeConfig.InCluster,
+      UseClusterValuesConfig: true,
+		}
+
+    // apps on the WC should go to the org namespace
+    if application.Spec.KubeConfig.InCluster == false {
+      //newApp.Organization = strings.TrimLeft(s.clusterInfo.Namespace, "org-")
+      newApp.Organization = organizationFromNamespace(s.clusterInfo.Namespace)
+    }
+
+    if application.Spec.UserConfig.ConfigMap.Name != "" {
+      newApp.UserConfigConfigMapName = application.Spec.UserConfig.ConfigMap.Name
+
+      var cm corev1.ConfigMap
+
+      // todo: NS is fetched from current CM; which is not the same ns
+      // as set in the app; in the app, the NS is not setable
+      err := k8sClient.Get(ctx, client.ObjectKey{
+          Name: application.Spec.UserConfig.ConfigMap.Name,
+          Namespace: application.Spec.UserConfig.ConfigMap.Namespace,
+        }, &cm)
+
+      if err != nil {
+        return microerror.Mask(err)
+      }
+
+      newCm := &corev1.ConfigMap{
+        TypeMeta: metav1.TypeMeta{
+          Kind:       "ConfigMap",
+          APIVersion: "v1",
+        },
+        ObjectMeta: metav1.ObjectMeta{
+          Name: application.Spec.UserConfig.ConfigMap.Name,
+          Namespace: application.Spec.UserConfig.ConfigMap.Namespace},
+        Data: cm.Data,
+      }
+
+      newCmYaml, err := k8syaml.Marshal(newCm)
+      if err != nil {
+        return microerror.Mask(err)
+      }
+
+      if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", newCmYaml))); err != nil {
+        return microerror.Mask(err)
+      }
+    }
+
+    if application.Spec.UserConfig.Secret.Name != "" {
+      newApp.UserConfigSecretName = application.Spec.UserConfig.Secret.Name
+
+      //todo: implement secret analog cm
+    }
+
+    appYAML, err := app.NewAppCR(newApp)
+    if err != nil {
+      return microerror.Mask(err)
+    }
+
+    if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", appYAML))); err != nil {
+      return microerror.Mask(err)
+    }
+
+  }
+	
+  fmt.Printf("Scheduled %d non-default apps for migration", numberOfAppsToMigrate)
+
+  if err := f.Close(); err != nil {
+    return microerror.Mask(err)
+  }
+
+  return nil
+}
+
 
 func (s *Service) migrateSecrets(ctx context.Context) error {
 	err := s.migrateCAsSecrets(ctx)
@@ -179,6 +302,15 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+  // todo: we might have to wait for cluster-app-op to create the $cluster-user-values cm
+  // otherwise kyverno will block the app creation
+  err = s.applyCAPIApps()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+  //return microerror.Mask(fmt.Errorf("stop"))
+
 
 	// the CAPI control plane nodes will roll out few times during the migration process
 	// so we run the function in background in goroutine to add them to the vintage ELBs to ensure ELB is always up-to-date

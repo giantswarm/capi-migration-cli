@@ -64,6 +64,30 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 	return nil
 }
 
+func (s *Service) applyCAPIApps() error {
+	fmt.Printf("Applying CAPI all non-default APP CRs to MC\n")
+	applyManifests := func() error {
+		//nolint:gosec
+		c := exec.Command("kubectl", "--context", fmt.Sprintf("gs-%s", s.clusterInfo.MC.CapiMC), "apply", "-f", nonDefaultAppYamlFile(s.clusterInfo.Name))
+
+		c.Stderr = os.Stderr
+		c.Stdin = os.Stdin
+
+		err := c.Run()
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		return nil
+	}
+
+	err := backoff.Retry(applyManifests, s.backOff)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	color.Green("CAPI non-default apps applied successfully.\n\n")
+	return nil
+}
+
 func (s *Service) applyCAPICluster() error {
 	fmt.Printf("Applying CAPI cluster APP CR to MC\n")
 	applyManifests := func() error {

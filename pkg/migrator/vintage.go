@@ -10,6 +10,7 @@ import (
 
 	"github.com/fatih/color"
 	chart "github.com/giantswarm/apiextensions-application/api/v1alpha1"
+	app "github.com/giantswarm/apiextensions-application/api/v1alpha1"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
 	"github.com/giantswarm/apiextensions/v6/pkg/label"
 	"github.com/giantswarm/backoff"
@@ -40,6 +41,8 @@ type VintageCRs struct {
 
 	Cluster            *capi.Cluster
 	MachineDeployments []capi.MachineDeployment
+	Cluster *capi.Cluster
+  Apps []app.App
 }
 
 // fetchVintageCRs fetches necessary CRs from vintage MC
@@ -65,6 +68,11 @@ func fetchVintageCRs(ctx context.Context, k8sClient client.Client, clusterName s
 	}
 
 	machineDeployments, err := readMachineDeployments(ctx, k8sClient, clusterName)
+  if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+  apps, err := readAllAppCR(ctx, k8sClient, clusterName)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -76,6 +84,7 @@ func fetchVintageCRs(ctx context.Context, k8sClient client.Client, clusterName s
 
 		Cluster:            cluster,
 		MachineDeployments: machineDeployments,
+    Apps: apps,
 	}
 	return crs, nil
 }
@@ -158,6 +167,20 @@ func readAWSMachineDeployment(ctx context.Context, k8sClient client.Client, clus
 		return nil, microerror.Mask(err)
 	}
 	return objList.Items, nil
+}
+
+func readAllAppCR(ctx context.Context, k8sClient client.Client, clusterName string) ([]app.App, error) {
+	objList := &app.AppList{}
+
+  // todo: not possible to filter on "spec.catalog" bc/ cached list not indexed?
+  selector := client.MatchingFields{"metadata.namespace": clusterName}
+  //selector := client.MatchingLabels{"app.kubernetes.io/name"
+	err := k8sClient.List(ctx, objList, selector)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+  return objList.Items, nil
 }
 
 // stopVintageReconciliation will remove AWSOperator label from the vintage CRs and also clears all finalizers

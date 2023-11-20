@@ -350,6 +350,11 @@ func (s *Service) templateDefaultAppsAWS() error {
 	return nil
 }
 
+func nonDefaultAppYamlFile(clusterName string) string {
+	wd, _ := os.Getwd()
+	return fmt.Sprintf("%s/%s-apps.yaml", wd, clusterName)
+}
+
 func clusterAppYamlFile(clusterName string) string {
 	wd, _ := os.Getwd()
 	return fmt.Sprintf("%s/%s-cluster.yaml", wd, clusterName)
