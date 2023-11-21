@@ -155,14 +155,22 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 		return microerror.Mask(err)
 	}
 
-  for _,application := range s.vintageCRs.Apps {
-    // todo: first we get all apps now we skip them based on 
-    // catalog. better to filter them in the List() but not 
-    // possible bc/ filter?
+  appLoop:
+    for _,application := range s.vintageCRs.Apps {
+      // skip "default" apps; these should be installed by default
+      if application.Spec.Catalog == "default" {
+        continue
+      }
 
-    if application.Spec.Catalog == "default" {
-      continue
-    }
+      // skip bundled apps as we only migrate their parent
+      // todo: verify thats formally correct
+      labels := application.GetLabels()
+      for key := range labels {
+        if strings.Contains(key, "giantswarm.io/managed-by") {
+          // we skip this app completly
+          continue appLoop
+        }
+      }
 
     numberOfAppsToMigrate += 1
 
@@ -298,18 +306,18 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+  // todo: we might have to wait for cluster-app-op to create the $cluster-user-values cm
+  // otherwise kyverno will block the app creation
+  err = s.applyCAPIApps()
+  if err != nil {
+    return microerror.Mask(err)
+  }
+  return microerror.Mask(fmt.Errorf("stop"))
+
 	err = s.applyCAPICluster()
 	if err != nil {
 		return microerror.Mask(err)
 	}
-
-  // todo: we might have to wait for cluster-app-op to create the $cluster-user-values cm
-  // otherwise kyverno will block the app creation
-  err = s.applyCAPIApps()
-	if err != nil {
-		return microerror.Mask(err)
-	}
-  //return microerror.Mask(fmt.Errorf("stop"))
 
 
 	// the CAPI control plane nodes will roll out few times during the migration process
@@ -338,6 +346,7 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
 
 	// run job to remove all control plane static manifests from vintage control plane nodes
 	err = s.stopVintageControlPlaneComponents(ctx)
