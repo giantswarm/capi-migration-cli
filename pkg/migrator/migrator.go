@@ -184,8 +184,11 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 			Namespace:              s.clusterInfo.Namespace,
 			Version:                application.Spec.Version,
       InCluster:              application.Spec.KubeConfig.InCluster,
-      UseClusterValuesConfig: true,
 		}
+
+    if application.Spec.Config.ConfigMap.Name == fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name) {
+      newApp.UseClusterValuesConfig = true
+    }
 
     // apps on the WC should go to the org namespace
     if application.Spec.KubeConfig.InCluster == false {
