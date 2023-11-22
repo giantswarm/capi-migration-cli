@@ -80,7 +80,7 @@ func (s *Service) applyCAPIApps() error {
 		return nil
 	}
 
-	err := backoff.Retry(applyManifests, s.backOff)
+	err = backoff.Retry(applyManifests, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -104,7 +104,7 @@ func (s *Service) applyCAPICluster() error {
 		return nil
 	}
 
-	err := backoff.Retry(applyManifests, s.backOff)
+	err = backoff.Retry(applyManifests, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}

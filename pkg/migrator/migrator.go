@@ -251,7 +251,7 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 
   }
 	
-  fmt.Printf("Scheduled %d non-default apps for migration", numberOfAppsToMigrate)
+  fmt.Printf("Scheduled %d non-default apps for migration\n", numberOfAppsToMigrate)
 
   if err := f.Close(); err != nil {
     return microerror.Mask(err)
@@ -312,11 +312,8 @@ func (s *Service) ProvisionCAPICluster(ctx context.Context) error {
 
   // todo: we might have to wait for cluster-app-op to create the $cluster-user-values cm
   // otherwise kyverno will block the app creation
-  err = s.applyCAPIApps()
-  if err != nil {
-    return microerror.Mask(err)
-  }
-  return microerror.Mask(fmt.Errorf("stop"))
+  go s.applyCAPIApps()
+  //return microerror.Mask(fmt.Errorf("stop"))
 
 	err = s.applyCAPICluster()
 	if err != nil {
