@@ -237,7 +237,37 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     if application.Spec.UserConfig.Secret.Name != "" {
       newApp.UserConfigSecretName = application.Spec.UserConfig.Secret.Name
 
-      //todo: implement secret analog cm
+      var secret corev1.Secret
+
+      err := k8sClient.Get(ctx, client.ObjectKey{
+          Name: application.Spec.UserConfig.Secret.Name,
+          Namespace: application.Spec.UserConfig.Secret.Namespace,
+        }, &secret)
+
+      if err != nil {
+        return microerror.Mask(err)
+      }
+
+      newSecret := &corev1.Secret{
+        TypeMeta: metav1.TypeMeta{
+          Kind:       "Secret",
+          APIVersion: "v1",
+        },
+        ObjectMeta: metav1.ObjectMeta{
+          Name: application.Spec.UserConfig.Secret.Name,
+          Namespace: s.clusterInfo.Namespace,
+        },
+        Data: secret.Data,
+      }
+
+      newSecretYaml, err := k8syaml.Marshal(newSecret)
+      if err != nil {
+        return microerror.Mask(err)
+      }
+
+      if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", newSecretYaml))); err != nil {
+        return microerror.Mask(err)
+      }
     }
 
     appYAML, err := app.NewAppCR(newApp)
