@@ -14,6 +14,7 @@ import (
 	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -64,7 +65,88 @@ func (s *Service) createAWSClusterRoleIdentity(ctx context.Context, vintageRoleA
 	return nil
 }
 
+func checkIfObjectExists(k8s client.Client, nameSpace string, name string, resourceKind string) (bool, error) {
+  switch resourceKind {
+    case "secret":
+      var secret v1.Secret
+      err := k8s.Get(context.TODO(), client.ObjectKey{
+          Name: name,
+          Namespace: nameSpace,
+        },
+        &secret)
+        
+      if err != nil {
+        if errors.IsNotFound(err) {
+          return false, nil
+        }
+        return false, err
+      }
+      return true, nil
+
+    case "configmap":
+      var cm v1.ConfigMap
+      err := k8s.Get(context.TODO(), client.ObjectKey{
+          Name: name,
+          Namespace: nameSpace,
+        },
+        &cm)
+        
+      if err != nil {
+        if errors.IsNotFound(err) {
+          return false, nil
+        }
+        return false, err
+      }
+      return true, nil
+
+    default:
+      return false, fmt.Errorf("unsupported resource kind: %s", resourceKind)
+  }
+}
+
 func (s *Service) applyCAPIApps() error {
+  // we skip the app apply if the file is empty
+  fileInfo, err := os.Stat(nonDefaultAppYamlFile(s.clusterInfo.Name))
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	// Check if the file size is 0
+	if fileInfo.Size() == 0 {
+    fmt.Printf("Skipping app migration as no non-default apps were found.")
+    return nil
+  }
+
+  // waitloop til kubeconfig is found
+  for {
+		cmClusterValuesExists, err := checkIfObjectExists(s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Namespace, fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name), "configmap")
+		if err != nil {
+			fmt.Printf("Error checking existence of %s/%s-cluster-values\n", "configmap", s.clusterInfo.Name)
+			continue
+		}
+
+		if cmClusterValuesExists {
+      secretClusterValuesExists, err := checkIfObjectExists(s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Namespace, fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name), "secret")
+        if err != nil {
+          fmt.Printf("Error checking existence of %s/%s-cluster-values\n", "secret", s.clusterInfo.Name)
+          continue
+        }
+
+        if secretClusterValuesExists {
+          kubeconfigExists, err := checkIfObjectExists(s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Namespace, fmt.Sprintf("%s-kubeconfig", s.clusterInfo.Name), "secret")
+          if err != nil {
+            fmt.Printf("Error checking existence of %s/%s-kubeconfig\n", "secret", s.clusterInfo.Name)
+            continue
+          }
+
+          if kubeconfigExists {
+            fmt.Printf("found everything")
+            break
+          }
+        }
+      }
+    time.Sleep(time.Second * 30)
+  }
+
 	fmt.Printf("Applying CAPI all non-default APP CRs to MC\n")
 	applyManifests := func() error {
 		//nolint:gosec
@@ -104,7 +186,7 @@ func (s *Service) applyCAPICluster() error {
 		return nil
 	}
 
-	err = backoff.Retry(applyManifests, s.backOff)
+	err := backoff.Retry(applyManifests, s.backOff)
 	if err != nil {
 		return microerror.Mask(err)
 	}
