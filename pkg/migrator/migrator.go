@@ -216,7 +216,8 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
         },
         ObjectMeta: metav1.ObjectMeta{
           Name: application.Spec.UserConfig.ConfigMap.Name,
-          Namespace: application.Spec.UserConfig.ConfigMap.Namespace},
+          Namespace: s.clusterInfo.Namespace,
+        },
         Data: cm.Data,
       }
 
