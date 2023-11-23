@@ -41,7 +41,6 @@ type VintageCRs struct {
 
 	Cluster            *capi.Cluster
 	MachineDeployments []capi.MachineDeployment
-	Cluster *capi.Cluster
   Apps []app.App
 }
 
