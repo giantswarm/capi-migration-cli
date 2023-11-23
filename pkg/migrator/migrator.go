@@ -177,14 +177,18 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     // todo: app operator version label?
     // todo: default labels missing?
     newApp := app.Config{
-			AppName:                application.GetName(),
       Cluster:                s.clusterInfo.Name,
 			Catalog:                application.Spec.Catalog,
 			Name:                   application.Spec.Name,
-			Namespace:              s.clusterInfo.Namespace,
+			Namespace:              application.Spec.Namespace,
 			Version:                application.Spec.Version,
       InCluster:              application.Spec.KubeConfig.InCluster,
 		}
+
+    // make sure we trim of the clustername if it somehow was prefixed on the app
+    metadataName := strings.TrimLeft(application.GetName(), s.clusterInfo.Name)
+    // now prefix our app with the cluster
+    newApp.AppName = fmt.Sprintf("%s-%s", s.clusterInfo.Name, metadataName)
 
     if application.Spec.Config.ConfigMap.Name == fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name) {
       newApp.UseClusterValuesConfig = true
