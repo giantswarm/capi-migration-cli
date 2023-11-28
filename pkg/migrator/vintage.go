@@ -174,10 +174,10 @@ func readAllAppCR(ctx context.Context, k8sClient client.Client, clusterName stri
   // todo: not possible to filter on "spec.catalog" bc/ cached list not indexed?
   selector := client.MatchingFields{"metadata.namespace": clusterName}
   //selector := client.MatchingLabels{"app.kubernetes.io/name"
-	err := k8sClient.List(ctx, objList, selector)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
+  err := k8sClient.List(ctx, objList, selector)
+  if err != nil {
+    return nil, microerror.Mask(err)
+  }
 
   return objList.Items, nil
 }
