@@ -145,10 +145,10 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 }
 
 func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) error {
-	//err := s.migrateNonDefaultApps(ctx)
   
   var numberOfAppsToMigrate int
 
+  // we write the apps to a yaml-file, which gets applied later
 	f, err := os.OpenFile(nonDefaultAppYamlFile(s.clusterInfo.Name), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0640)
 
 	if err != nil {
@@ -157,7 +157,7 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 
   appLoop:
     for _,application := range s.vintageCRs.Apps {
-      // skip "default" apps; these should be installed by default
+      // skip "default" apps; these should be installed by default on the MC
       if application.Spec.Catalog == "default" {
         continue
       }
@@ -174,29 +174,79 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 
     numberOfAppsToMigrate += 1
 
-    // todo: app operator version label?
-    // todo: default labels missing?
+    //	AppName                    string
+//	Catalog                    string
+//	CatalogNamespace           string
+// 	Cluster                    string
+// 	DefaultingEnabled          bool
+// 	InCluster                  bool
+// 	InstallTimeout             *metav1.Duration
+// 	Name                       string
+// 	Namespace                  string
+// 	NamespaceConfigAnnotations map[string]string
+// 	NamespaceConfigLabels      map[string]string
+// 	UninstallTimeout           *metav1.Duration
+// 	UpgradeTimeout             *metav1.Duration
+// 	UserConfigConfigMapName    string
+// 	UserConfigSecretName       string
+// 	ExtraConfigs               []applicationv1alpha1.AppExtraConfig
+// 	Organization               string
+// 	RollbackTimeout            *metav1.Duration
+// 	Version                    string
+// 	ExtraLabels                map[string]string
+// 	ExtraAnnotations           map[string]string
+// 	UseClusterValuesConfig     bool
+
+    // todo: app operator version; does it impact the migration?
+    // todo: how to deal with ExtraLabels and Extrannotations?
     newApp := app.Config{
-      Cluster:                s.clusterInfo.Name,
-			Catalog:                application.Spec.Catalog,
-			Name:                   application.Spec.Name,
-			Namespace:              application.Spec.Namespace,
-			Version:                application.Spec.Version,
-      InCluster:              application.Spec.KubeConfig.InCluster,
+      AppName: application.ObjectMeta.Name,
+			Catalog:      application.Spec.Catalog,
+      Cluster:      s.clusterInfo.Name,
+      InCluster:    application.Spec.KubeConfig.InCluster,
+			Name:         application.Spec.Name,
+			Namespace:    application.Spec.Namespace,
+			Version:      application.Spec.Version,
 		}
 
     // make sure we trim of the clustername if it somehow was prefixed on the app
     metadataName := strings.TrimLeft(application.GetName(), s.clusterInfo.Name)
     // now prefix our app with the cluster
     newApp.AppName = fmt.Sprintf("%s-%s", s.clusterInfo.Name, metadataName)
-
     if application.Spec.Config.ConfigMap.Name == fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name) {
       newApp.UseClusterValuesConfig = true
     }
 
+    if application.Spec.ExtraConfigs != nil {
+      newApp.ExtraConfigs = application.Spec.ExtraConfigs
+    }
+
+    if application.Spec.CatalogNamespace != "" {
+      newApp.CatalogNamespace = application.Spec.CatalogNamespace
+    }
+
+    if application.Spec.NamespaceConfig.Labels != nil {
+      newApp.NamespaceConfigLabels = application.Spec.NamespaceConfig.Labels
+    }
+    if application.Spec.NamespaceConfig.Annotations != nil {
+      newApp.NamespaceConfigAnnotations = application.Spec.NamespaceConfig.Annotations
+    }
+
+    if application.Spec.Install.Timeout != nil {
+      newApp.InstallTimeout = application.Spec.Install.Timeout
+    }
+    if application.Spec.Rollback.Timeout != nil {
+      newApp.RollbackTimeout = application.Spec.Rollback.Timeout
+    }
+    if application.Spec.Uninstall.Timeout != nil {
+      newApp.UninstallTimeout = application.Spec.Uninstall.Timeout
+    }
+    if application.Spec.Upgrade.Timeout != nil {
+      newApp.UpgradeTimeout = application.Spec.Upgrade.Timeout
+    }
+
     // apps on the WC should go to the org namespace
     if application.Spec.KubeConfig.InCluster == false {
-      //newApp.Organization = strings.TrimLeft(s.clusterInfo.Namespace, "org-")
       newApp.Organization = organizationFromNamespace(s.clusterInfo.Namespace)
     }
 
