@@ -159,17 +159,17 @@ func readAwsControlPlane(ctx context.Context, k8sClient client.Client, clusterNa
 }
 
 func readAWSMachineDeployment(ctx context.Context, k8sClient client.Client, clusterName string) ([]giantswarmawsalpha3.AWSMachineDeployment, error) {
-	objList := &giantswarmawsalpha3.AWSMachineDeploymentList{}
-	selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
-	err := k8sClient.List(ctx, objList, selector)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return objList.Items, nil
+  objList := &giantswarmawsalpha3.AWSMachineDeploymentList{}
+  selector := client.MatchingLabels{capi.ClusterNameLabel: clusterName}
+  err := k8sClient.List(ctx, objList, selector)
+  if err != nil {
+    return nil, microerror.Mask(err)
+  }
+  return objList.Items, nil
 }
 
 func readAllAppCR(ctx context.Context, k8sClient client.Client, clusterName string) ([]app.App, error) {
-	objList := &app.AppList{}
+  objList := &app.AppList{}
 
   // todo: not possible to filter on "spec.catalog" bc/ cached list not indexed?
   selector := client.MatchingFields{"metadata.namespace": clusterName}
