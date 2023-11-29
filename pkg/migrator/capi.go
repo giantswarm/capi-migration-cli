@@ -116,25 +116,27 @@ func (s *Service) applyCAPIApps() error {
     return nil
   }
 
-  // waitloop til kubeconfig is found
+  // waitloop til kubeconfig/default values are found
   for {
+    time.Sleep(time.Second * 30)
+
 		cmClusterValuesExists, err := checkIfObjectExists(s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Namespace, fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name), "configmap")
 		if err != nil {
-			fmt.Printf("Error checking existence of %s/%s-cluster-values\n", "configmap", s.clusterInfo.Name)
+      fmt.Printf("Error checking existence of %s/%s-cluster-values: %s\n", "configmap", s.clusterInfo.Name, err)
 			continue
 		}
 
 		if cmClusterValuesExists {
       secretClusterValuesExists, err := checkIfObjectExists(s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Namespace, fmt.Sprintf("%s-cluster-values", s.clusterInfo.Name), "secret")
         if err != nil {
-          fmt.Printf("Error checking existence of %s/%s-cluster-values\n", "secret", s.clusterInfo.Name)
+          fmt.Printf("Error checking existence of %s/%s-cluster-values: %s\n", "secret", s.clusterInfo.Name, err)
           continue
         }
 
         if secretClusterValuesExists {
           kubeconfigExists, err := checkIfObjectExists(s.clusterInfo.MC.CapiKubernetesClient, s.clusterInfo.Namespace, fmt.Sprintf("%s-kubeconfig", s.clusterInfo.Name), "secret")
           if err != nil {
-            fmt.Printf("Error checking existence of %s/%s-kubeconfig\n", "secret", s.clusterInfo.Name)
+            fmt.Printf("Error checking existence of %s/%s-kubeconfig: %s\n", "secret", s.clusterInfo.Name, err)
             continue
           }
 
@@ -144,7 +146,6 @@ func (s *Service) applyCAPIApps() error {
           }
         }
       }
-    time.Sleep(time.Second * 30)
   }
 
 	fmt.Printf("Applying CAPI all non-default APP CRs to MC\n")
