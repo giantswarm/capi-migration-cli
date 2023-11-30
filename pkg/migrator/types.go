@@ -1,10 +1,14 @@
 package migrator
 
 type ClusterAppValuesData struct {
+	Global   Global   `yaml:"global"`
+	Internal Internal `yaml:"internal"`
+}
+
+type Global struct {
 	Metadata Metadata `yaml:"metadata"`
 
 	ControlPlane     ControlPlane        `yaml:"controlPlane"`
-	Internal         Internal            `yaml:"internal"`
 	Connectivity     Connectivity        `yaml:"connectivity"`
 	NodePools        map[string]NodePool `yaml:"nodePools"`
 	ProviderSpecific ProviderSpecific    `yaml:"providerSpecific"`
