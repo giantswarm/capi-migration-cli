@@ -60,6 +60,7 @@ type NodePool struct {
 	MaxSize                  int                 `yaml:"maxSize"`
 	RootVolumeSizeGB         int                 `yaml:"rootVolumeSizeGB"`
 	SubnetTags               []map[string]string `yaml:"subnetTags"`
+	CustomNodeLabel          []string            `yaml:"customNodeLabel"`
 }
 
 type ProviderSpecific struct {

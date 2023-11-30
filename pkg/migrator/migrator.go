@@ -283,7 +283,7 @@ func (s *Service) CleanVintageCluster(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 		color.Yellow("Draining all vintage worker nodes for nodepool %s.", mp.Name)
-		err = s.drainVintageNodes(ctx, vintageNodePoolNodeLabels(mp.Name))
+		err = s.drainVintageNodes(ctx, nodePoolNodesLabels(mp.Name))
 		if err != nil {
 			return microerror.Mask(err)
 		}
