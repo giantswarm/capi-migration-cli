@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/kubectl-gs/v2/pkg/template/app"
+  applicationv1alpha1 "github.com/giantswarm/apiextensions-application/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8syaml "sigs.k8s.io/yaml"
@@ -51,6 +52,13 @@ type AppInfo struct {
 	ClusterAppCatalog  string
 	DefaultAppsVersion string
 	DefaultAppsCatalog string
+}
+
+type AppExtraConfig struct {
+  Kind      string
+  Name      string
+  Namespace string
+  Yaml      []byte
 }
 
 func New(c Config) (*Service, error) {
@@ -145,19 +153,38 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 	return nil
 }
 
-func migrateAppConfigObject(k8sClient client.Client, resourceKind string, name string, nameSpace string) ([]byte, error) {
+func migrateAppConfigObject(k8sClient client.Client, resourceKind string, clusterName string, resourceName string, namespace string) (AppExtraConfig, error) {
+
+  var config AppExtraConfig
+
+  if namespace != "default" && namespace != "giantswarm" {
+    // we force-migrate the objects to the org-namespace
+    // if they were in a custom one before
+
+    // make sure the "org-" is trimmed
+    tmp := organizationFromNamespace(clusterName)
+    config.Namespace = fmt.Sprintf("%s-%s", "org", tmp)
+  } else {
+    config.Namespace = namespace
+  }
+
+  // make sure we trim the clustername if it somehow was prefixed on the app
+    name := strings.TrimLeft(resourceName, clusterName)
+    config.Name = fmt.Sprintf("%s-%s", clusterName, name)
+
 
   switch resourceKind {
     case "secret":
       var secret corev1.Secret
+      config.Kind = "secret"
 
       err := k8sClient.Get(context.TODO(), client.ObjectKey{
-        Name: name,
-        Namespace: nameSpace,
+        Name: resourceName,
+        Namespace: namespace,
       }, &secret)
 
       if err != nil {
-        return nil, microerror.Mask(err)
+        return AppExtraConfig{}, microerror.Mask(err)
       }
 
       newSecret := &corev1.Secret{
@@ -166,28 +193,29 @@ func migrateAppConfigObject(k8sClient client.Client, resourceKind string, name s
           APIVersion: "v1",
         },
         ObjectMeta: metav1.ObjectMeta{
-          Name: name,
-          Namespace: nameSpace,
+          Name: config.Name,
+          Namespace: config.Namespace,
         },
         Data: secret.Data,
       }
-      newSecretYaml, err := k8syaml.Marshal(newSecret)
+      config.Yaml, err = k8syaml.Marshal(newSecret)
 
       if err != nil {
-        return nil, microerror.Mask(err)
+        return AppExtraConfig{}, microerror.Mask(err)
       }
 
-      return newSecretYaml, nil
 
     case "configmap":
       var cm corev1.ConfigMap
+      config.Kind = "configMap"
+
       err := k8sClient.Get(context.TODO(), client.ObjectKey{
-          Name: name,
-          Namespace: nameSpace,
+          Name: resourceName,
+          Namespace: namespace,
         }, &cm)
 
       if err != nil {
-        return nil,microerror.Mask(err)
+        return AppExtraConfig{},microerror.Mask(err)
       }
 
       newCm := &corev1.ConfigMap{
@@ -196,22 +224,22 @@ func migrateAppConfigObject(k8sClient client.Client, resourceKind string, name s
           APIVersion: "v1",
         },
         ObjectMeta: metav1.ObjectMeta{
-          Name: name,
-          Namespace: nameSpace,
+          Name: config.Name,
+          Namespace: config.Namespace,
         },
         Data: cm.Data,
       }
 
-      newCmYaml, err := k8syaml.Marshal(newCm)
+      config.Yaml, err = k8syaml.Marshal(newCm)
       if err != nil {
-        return nil, microerror.Mask(err)
+        return AppExtraConfig{}, microerror.Mask(err)
       }
 
-      return newCmYaml, nil
-
     default:
-      return nil,fmt.Errorf("unsupported resource kind: %s", resourceKind)
+      return AppExtraConfig{},fmt.Errorf("unsupported resource kind: %s", resourceKind)
     }
+
+    return config, nil
 }
 
 func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) error {
@@ -257,7 +285,7 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     // todo: app operator version; does it impact the migration?
     // todo: how to deal with ExtraLabels and Extrannotations?
     newApp := app.Config{
-      AppName: application.ObjectMeta.Name,
+      AppName:      application.ObjectMeta.Name,
 			Catalog:      application.Spec.Catalog,
       Cluster:      s.clusterInfo.Name,
       InCluster:    application.Spec.KubeConfig.InCluster,
@@ -266,7 +294,7 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 			Version:      application.Spec.Version,
 		}
 
-    // make sure we trim of the clustername if it somehow was prefixed on the app
+    // make sure we trim the clustername if it somehow was prefixed on the app
     metadataName := strings.TrimLeft(application.GetName(), s.clusterInfo.Name)
     // now prefix our app with the cluster
     newApp.AppName = fmt.Sprintf("%s-%s", s.clusterInfo.Name, metadataName)
@@ -275,15 +303,21 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     }
 
     if application.Spec.ExtraConfigs != nil {
-      newApp.ExtraConfigs = application.Spec.ExtraConfigs
 
       for _, extraConfig := range application.Spec.ExtraConfigs {
-        obj, err := migrateAppConfigObject(k8sClient, strings.ToLower(extraConfig.Kind), extraConfig.Name, extraConfig.Namespace)
+        obj, err := migrateAppConfigObject(k8sClient, strings.ToLower(extraConfig.Kind),s.clusterInfo.Name, extraConfig.Name, extraConfig.Namespace)
         if err != nil {
           return microerror.Mask(err)
         }
 
-        if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", obj))); err != nil {
+        newApp.ExtraConfigs = append(newApp.ExtraConfigs, applicationv1alpha1.AppExtraConfig{
+          Kind: obj.Kind,
+          Name: obj.Name,
+          Namespace: obj.Namespace,
+          Priority: extraConfig.Priority,
+        })
+
+        if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", obj.Yaml))); err != nil {
           return microerror.Mask(err)
         }
       }
@@ -319,14 +353,15 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     }
 
     if application.Spec.UserConfig.ConfigMap.Name != "" {
-      newApp.UserConfigConfigMapName = application.Spec.UserConfig.ConfigMap.Name
 
-      configmap, err := migrateAppConfigObject(k8sClient, "configmap", application.Spec.UserConfig.ConfigMap.Name, application.Spec.UserConfig.ConfigMap.Namespace)
+      configmap, err := migrateAppConfigObject(k8sClient, "configmap", s.clusterInfo.Name, application.Spec.UserConfig.ConfigMap.Name, application.Spec.UserConfig.ConfigMap.Namespace)
       if err != nil {
         return microerror.Mask(err)
       }
 
-      if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", configmap))); err != nil {
+      newApp.UserConfigConfigMapName = configmap.Name
+
+      if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", configmap.Yaml))); err != nil {
         return microerror.Mask(err)
       }
     }
@@ -334,12 +369,14 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     if application.Spec.UserConfig.Secret.Name != "" {
       newApp.UserConfigSecretName = application.Spec.UserConfig.Secret.Name
 
-      secret, err := migrateAppConfigObject(k8sClient, "secret", application.Spec.UserConfig.Secret.Name, application.Spec.UserConfig.Secret.Namespace)
+      secret, err := migrateAppConfigObject(k8sClient, "secret", s.clusterInfo.Name, application.Spec.UserConfig.Secret.Name, application.Spec.UserConfig.Secret.Namespace)
       if err != nil {
         return microerror.Mask(err)
       }
 
-      if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", secret))); err != nil {
+      newApp.UserConfigSecretName = secret.Name
+
+      if _, err := f.Write([]byte(fmt.Sprintf("%s---\n", secret.Yaml))); err != nil {
         return microerror.Mask(err)
       }
     }

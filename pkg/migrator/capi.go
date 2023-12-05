@@ -112,7 +112,7 @@ func (s *Service) applyCAPIApps() error {
 	}
 	// Check if the file size is 0
 	if fileInfo.Size() == 0 {
-    fmt.Printf("Skipping app migration as no non-default apps were found.")
+    fmt.Println("Skipping app migration as no non-default apps were found.")
     return nil
   }
 
