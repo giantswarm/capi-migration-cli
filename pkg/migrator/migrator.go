@@ -153,7 +153,7 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 	return nil
 }
 
-func migrateAppConfigObject(k8sClient client.Client, resourceKind string, clusterName string, resourceName string, namespace string) (AppExtraConfig, error) {
+func migrateAppConfigObject(k8sClient client.Client, resourceKind string, clusterName string, resourceName string, namespace string, organization string) (AppExtraConfig, error) {
 
   var config AppExtraConfig
 
@@ -161,9 +161,7 @@ func migrateAppConfigObject(k8sClient client.Client, resourceKind string, cluste
     // we force-migrate the objects to the org-namespace
     // if they were in a custom one before
 
-    // make sure the "org-" is trimmed
-    tmp := organizationFromNamespace(clusterName)
-    config.Namespace = fmt.Sprintf("%s-%s", "org", tmp)
+    config.Namespace = fmt.Sprintf("%s-%s", "org", organization)
   } else {
     config.Namespace = namespace
   }
@@ -276,11 +274,6 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 // 	ExtraLabels                map[string]string
 // 	ExtraAnnotations           map[string]string
 // 	UseClusterValuesConfig     bool
-// 	InstallTimeout             *metav1.Duration
-// 	UninstallTimeout           *metav1.Duration
-// 	UpgradeTimeout             *metav1.Duration
-// 	RollbackTimeout            *metav1.Duration
-
 
     // todo: app operator version; does it impact the migration?
     // todo: how to deal with ExtraLabels and Extrannotations?
@@ -292,6 +285,7 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 			Name:         application.Spec.Name,
 			Namespace:    application.Spec.Namespace,
 			Version:      application.Spec.Version,
+      Organization: organizationFromNamespace(s.clusterInfo.Namespace),
 		}
 
     // make sure we trim the clustername if it somehow was prefixed on the app
@@ -305,7 +299,13 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     if application.Spec.ExtraConfigs != nil {
 
       for _, extraConfig := range application.Spec.ExtraConfigs {
-        obj, err := migrateAppConfigObject(k8sClient, strings.ToLower(extraConfig.Kind),s.clusterInfo.Name, extraConfig.Name, extraConfig.Namespace)
+        obj, err := migrateAppConfigObject(
+            k8sClient, 
+            strings.ToLower(extraConfig.Kind),
+            s.clusterInfo.Name, 
+            extraConfig.Name, 
+            extraConfig.Namespace, 
+            newApp.Organization)
         if err != nil {
           return microerror.Mask(err)
         }
@@ -354,7 +354,13 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
 
     if application.Spec.UserConfig.ConfigMap.Name != "" {
 
-      configmap, err := migrateAppConfigObject(k8sClient, "configmap", s.clusterInfo.Name, application.Spec.UserConfig.ConfigMap.Name, application.Spec.UserConfig.ConfigMap.Namespace)
+      configmap, err := migrateAppConfigObject(
+          k8sClient,
+          "configmap",
+          s.clusterInfo.Name,
+          application.Spec.UserConfig.ConfigMap.Name,
+          application.Spec.UserConfig.ConfigMap.Namespace,
+          newApp.Organization)
       if err != nil {
         return microerror.Mask(err)
       }
@@ -369,7 +375,13 @@ func (s *Service) migrateApps(ctx context.Context, k8sClient client.Client) erro
     if application.Spec.UserConfig.Secret.Name != "" {
       newApp.UserConfigSecretName = application.Spec.UserConfig.Secret.Name
 
-      secret, err := migrateAppConfigObject(k8sClient, "secret", s.clusterInfo.Name, application.Spec.UserConfig.Secret.Name, application.Spec.UserConfig.Secret.Namespace)
+      secret, err := migrateAppConfigObject(
+        k8sClient,
+        "secret",
+        s.clusterInfo.Name,
+        application.Spec.UserConfig.Secret.Name,
+        application.Spec.UserConfig.Secret.Namespace,
+        newApp.Organization)
       if err != nil {
         return microerror.Mask(err)
       }

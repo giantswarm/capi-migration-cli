@@ -142,7 +142,7 @@ func (s *Service) applyCAPIApps() error {
         }
 
         if kubeconfigExists {
-          color.Yellow("All prerequistes are found on the new MC for app migration")
+          color.Yellow("\nAll prerequistes are found on the new MC for app migration")
           break
         }
       }
