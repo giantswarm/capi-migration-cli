@@ -16,7 +16,6 @@ import (
 	chart "github.com/giantswarm/apiextensions-application/api/v1alpha1"
 	giantswarmawsalpha3 "github.com/giantswarm/apiextensions/v6/pkg/apis/infrastructure/v1alpha3"
 	"github.com/giantswarm/backoff"
-
 	"github.com/giantswarm/microerror"
 	vaultapi "github.com/hashicorp/vault/api"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,6 +26,8 @@ import (
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 	kubeadmv1beta1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 var (
@@ -262,6 +263,8 @@ func getK8sClientFromKubeconfig(contextName string) (client.Client, kubernetes.I
 		return nil, nil, microerror.Mask(err)
 	}
 
+	// This line prevents controller-runtime from complaining about log.SetLogger never being called
+	logf.SetLogger(zap.New(zap.WriteTo(os.Stdout), zap.UseDevMode(true)))
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)

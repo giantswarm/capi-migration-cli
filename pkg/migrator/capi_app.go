@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.45.0"
+	ClusterAppVersion  = "0.50.0"
 	ClusterAppCatalog  = "cluster"
 	DefaultAppsVersion = "0.34.0"
 	DefaultAppsCatalog = "cluster"
@@ -77,21 +77,41 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 
 	// fill the struct
 	data := &ClusterAppValuesData{
-		Metadata: Metadata{
-			Name:            s.clusterInfo.Name,
-			Organization:    organizationFromNamespace(s.clusterInfo.Namespace),
-			Description:     getClusterDescription(s.vintageCRs),
-			ServicePriority: servicePriority,
-		},
 
-		ControlPlane: ControlPlane{
-			AdditionalSecurityGroups: []SecurityGroup{{ID: masterSecurityGroupID}},
-			ApiExtraArgs: map[string]string{
-				"etcd-prefix": "giantswarm.io",
+		Global: Global{
+			Metadata: Metadata{
+				Name:            s.clusterInfo.Name,
+				Organization:    organizationFromNamespace(s.clusterInfo.Namespace),
+				Description:     getClusterDescription(s.vintageCRs),
+				ServicePriority: servicePriority,
 			},
-			ApiExtraCertSans: []string{apiEndpointFromDomain(s.vintageCRs.AwsCluster.Spec.Cluster.DNS.Domain, s.clusterInfo.Name)},
-			InstanceType:     s.vintageCRs.AwsControlPlane.Spec.InstanceType,
-			SubnetTags:       buildCPSubnetTags(s.clusterInfo.Name),
+
+			ControlPlane: ControlPlane{
+				AdditionalSecurityGroups: []SecurityGroup{{ID: masterSecurityGroupID}},
+				ApiExtraArgs: map[string]string{
+					"etcd-prefix": "giantswarm.io",
+				},
+				ApiExtraCertSans: []string{apiEndpointFromDomain(s.vintageCRs.AwsCluster.Spec.Cluster.DNS.Domain, s.clusterInfo.Name)},
+				InstanceType:     s.vintageCRs.AwsControlPlane.Spec.InstanceType,
+				SubnetTags:       buildCPSubnetTags(s.clusterInfo.Name),
+			},
+			Connectivity: Connectivity{
+				Network: Network{
+					InternetGatewayID: internetGatewayID,
+					VPCID:             s.vintageCRs.AwsCluster.Status.Provider.Network.VPCID,
+					Pods: Pods{
+						CidrBlocks: []string{s.vintageCRs.AwsCluster.Spec.Provider.Pods.CIDRBlock},
+					},
+					Services: Services{
+						CidrBlocks: []string{clusterServiceCidrBlock},
+					},
+				},
+				Subnets: subnets,
+			},
+			ProviderSpecific: ProviderSpecific{
+				AwsClusterRoleIdentityName: awsClusterRoleIdentityName(s.clusterInfo.Name),
+				Region:                     s.vintageCRs.AwsCluster.Spec.Provider.Region,
+			},
 		},
 		Internal: Internal{
 			Migration: Migration{
@@ -154,33 +174,16 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 				},
 			},
 		},
-		Connectivity: Connectivity{
-			Network: Network{
-				InternetGatewayID: internetGatewayID,
-				VPCID:             s.vintageCRs.AwsCluster.Status.Provider.Network.VPCID,
-				Pods: Pods{
-					CidrBlocks: []string{s.vintageCRs.AwsCluster.Spec.Provider.Pods.CIDRBlock},
-				},
-				Services: Services{
-					CidrBlocks: []string{clusterServiceCidrBlock},
-				},
-			},
-			Subnets: subnets,
-		},
-		ProviderSpecific: ProviderSpecific{
-			AwsClusterRoleIdentityName: awsClusterRoleIdentityName(s.clusterInfo.Name),
-			Region:                     s.vintageCRs.AwsCluster.Spec.Provider.Region,
-		},
 	}
 
-	data.NodePools = make(map[string]NodePool)
+	data.Global.NodePools = make(map[string]NodePool)
 	for _, mp := range s.vintageCRs.AwsMachineDeployments {
 		id, err := s.getWorkerSecurityGroupID(mp.Name)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
 
-		data.NodePools[mp.Name] = NodePool{
+		data.Global.NodePools[mp.Name] = NodePool{
 			AdditionalSecurityGroups: []SecurityGroup{{ID: id}},
 			AvailabilityZones:        mp.Spec.Provider.AvailabilityZones,
 			InstanceType:             mp.Spec.Provider.Worker.InstanceType,
