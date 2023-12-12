@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	capi "sigs.k8s.io/cluster-api/api/v1beta1"
 	kubeadmv1beta1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -262,6 +264,8 @@ func getK8sClientFromKubeconfig(contextName string) (client.Client, kubernetes.I
 		return nil, nil, microerror.Mask(err)
 	}
 
+	// This line prevents controller-runtime from complaining about log.SetLogger never being called
+	logf.SetLogger(zap.New(zap.WriteTo(os.Stdout), zap.UseDevMode(true)))
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, nil, microerror.Mask(err)
