@@ -172,6 +172,7 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 					"initial-cluster":                                "$ETCD_INITIAL_CLUSTER",
 					"experimental-peer-skip-client-san-verification": "true",
 				},
+				IrsaAdditionalDomain: fmt.Sprintf("https://irsa.%s.k8s.%s.%s.aws.gigantic.io", s.clusterInfo.Name, s.clusterInfo.MC.VintageMC, s.vintageCRs.AwsCluster.Spec.Provider.Region),
 			},
 		},
 	}
