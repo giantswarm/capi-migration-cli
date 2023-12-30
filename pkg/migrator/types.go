@@ -8,6 +8,7 @@ type ClusterAppValuesData struct {
 type Global struct {
 	Metadata Metadata `yaml:"metadata"`
 
+	Apps             Apps                `yaml:"apps"`
 	ControlPlane     ControlPlane        `yaml:"controlPlane"`
 	Connectivity     Connectivity        `yaml:"connectivity"`
 	NodePools        map[string]NodePool `yaml:"nodePools"`
@@ -101,4 +102,22 @@ type Subnet struct {
 	IsPublic     bool   `yaml:"isPublic"`
 	RouteTableID string `yaml:"routeTableId"`
 	NatGatewayID string `yaml:"natGatewayId,omitempty"`
+}
+
+type Apps struct {
+	AwsCloudControllerManager App `yaml:"awsCloudControllerManager"`
+	AwsEbsCsiDriver           App `yaml:"awsEbsCsiDriver"`
+	Cilium                    App `yaml:"cilium"`
+	CoreDNS                   App `yaml:"coreDns"`
+	// ignore vertical-pod-autoscaler-crd app as it is not present in the vintage and there is no real point to customise it anyway
+}
+
+type App struct {
+	ExtraConfigs []ExtraConfig `yaml:"extraConfigs"`
+}
+
+type ExtraConfig struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace,omitempty"` // only available in the vintage app CR but not in the final config fro the app
+	Kind      string `yaml:"kind"`
 }

@@ -18,14 +18,16 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.50.0"
+	ClusterAppVersion  = "0.54.0"
 	ClusterAppCatalog  = "cluster"
-	DefaultAppsVersion = "0.34.0"
+	DefaultAppsVersion = "0.40.0"
 	DefaultAppsCatalog = "cluster"
 
 	DefaultAppsAWSRepoName = "default-apps-aws"
 	ClusterAWSRepoName     = "cluster-aws"
 )
+
+var ClusterAWSDefaultAppList = [4]string{"cilium", "aws-ebs-csi-driver", "aws-cloud-controller-manager", "coredns"}
 
 func (s *Service) GenerateCAPIClusterTemplates(ctx context.Context) error {
 	// remove file if it already exists
@@ -175,6 +177,29 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 			},
 		},
 	}
+
+	// add apps
+	appValues := map[string]App{}
+	for _, appName := range ClusterAWSDefaultAppList {
+		extraConfigs, err := s.fetchVintageAppExtraConfigs(ctx, appName)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		var app App
+		for _, extraConfig := range extraConfigs {
+			kind := "ConfigMap"
+			if strings.ToLower(extraConfig.Kind) == "secret" {
+				kind = "Secret"
+			}
+			app.ExtraConfigs = append(app.ExtraConfigs, ExtraConfig{Kind: kind, Name: fmt.Sprintf("%s-%s", s.clusterInfo.Name, extraConfig.Name)})
+		}
+
+		appValues[appName] = app
+	}
+	data.Global.Apps.Cilium = appValues["cilium"]
+	data.Global.Apps.AwsEbsCsiDriver = appValues["aws-ebs-csi-driver"]
+	data.Global.Apps.AwsCloudControllerManager = appValues["aws-cloud-controller-manager"]
+	data.Global.Apps.CoreDNS = appValues["coredns"]
 
 	data.Global.NodePools = make(map[string]NodePool)
 	for _, mp := range s.vintageCRs.AwsMachineDeployments {
