@@ -192,9 +192,10 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 			MaxSize:                  mp.Spec.NodePool.Scaling.Max,
 			RootVolumeSizeGB:         calculateRootVolumeSize(mp.Spec.NodePool.Machine.DockerVolumeSizeGB, mp.Spec.NodePool.Machine.KubeletVolumeSizeGB),
 			SubnetTags:               buildMPSubnetTags(s.clusterInfo.Name, mp.Name),
+			CustomNodeLabel:          []string{fmt.Sprintf("giantswarm.io/machine-deployment=%s", mp.Name)},
 		}
 	}
-	// check fro cgroups v1
+	// check for cgroups v1
 	for _, md := range s.vintageCRs.MachineDeployments {
 		if _, ok := md.Annotations["node.giantswarm.io/cgroupv1"]; ok {
 			data.Internal.CGroupsv1 = true

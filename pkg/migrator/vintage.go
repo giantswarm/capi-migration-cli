@@ -457,7 +457,7 @@ func getClusterServiceCidrBlock(ctx context.Context, k8sClient client.Client, cr
 }
 
 func (s *Service) cordonAllVintageWorkerNodes(ctx context.Context) error {
-	nodes, err := s.getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, allVintageNodePoolNodeLabels())
+	nodes, err := s.getVintageNodes(ctx, s.clusterInfo.KubernetesControllerClient, allNodePoolNodesLabels())
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -710,13 +710,13 @@ func controlPlaneNodeLabels() client.MatchingLabels {
 	return client.MatchingLabels{"node-role.kubernetes.io/control-plane": ""}
 }
 
-func allVintageNodePoolNodeLabels() client.MatchingLabels {
+func allNodePoolNodesLabels() client.MatchingLabels {
 	return client.MatchingLabels{
 		"node-role.kubernetes.io/worker": "",
 	}
 }
 
-func vintageNodePoolNodeLabels(nodePoolName string) client.MatchingLabels {
+func nodePoolNodesLabels(nodePoolName string) client.MatchingLabels {
 	return client.MatchingLabels{
 		"node-role.kubernetes.io/worker":   "",
 		"giantswarm.io/machine-deployment": nodePoolName,
