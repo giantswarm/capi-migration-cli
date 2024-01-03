@@ -3,9 +3,6 @@ package migrator
 import (
 	"context"
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 	"time"
 
@@ -16,6 +13,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/capi-migration-cli/cluster"
 )
