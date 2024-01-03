@@ -118,7 +118,7 @@ type App struct {
 
 type ExtraConfig struct {
 	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace,omitempty"` // only available in the vintage app CR but not in the final config fro the app
+	Namespace string `yaml:"namespace,omitempty"`
 	Kind      string `yaml:"kind"`
 }
 

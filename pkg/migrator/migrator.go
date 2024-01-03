@@ -178,7 +178,7 @@ func (s *Service) migrateDefaultAppsValues(ctx context.Context) error {
 		}
 		for _, extraConfig := range extraConfigs {
 			kind := strings.ToLower(extraConfig.Kind)
-			if kind == "secret" {
+			if kind == SecretKindLoverCase {
 				var secret corev1.Secret
 				err = s.clusterInfo.MC.VintageKubernetesClient.Get(ctx, ctrl.ObjectKey{Name: extraConfig.Name, Namespace: extraConfig.Namespace}, &secret)
 				if err != nil {

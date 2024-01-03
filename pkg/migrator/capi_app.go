@@ -24,6 +24,11 @@ const (
 
 	DefaultAppsAWSRepoName = "default-apps-aws"
 	ClusterAWSRepoName     = "cluster-aws"
+
+	SecretKindLoverCase    = "secret"
+	SecretKindUpperCase    = "Secret"
+	ConfigMapKindLoverCase = "configmap"
+	ConfigMapKindUpperCase = "ConfigMap"
 )
 
 var ClusterAWSDefaultAppList = []string{"cilium", "aws-ebs-csi-driver", "aws-cloud-controller-manager", "coredns"}
@@ -187,9 +192,10 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		}
 		var app App
 		for _, extraConfig := range extraConfigs {
-			kind := "ConfigMap"
-			if strings.ToLower(extraConfig.Kind) == "secret" {
-				kind = "Secret"
+			// HelmRelease CR use different case for kind and our App CR
+			kind := ConfigMapKindUpperCase
+			if strings.ToLower(extraConfig.Kind) == SecretKindLoverCase {
+				kind = SecretKindUpperCase
 			}
 			app.ExtraConfigs = append(app.ExtraConfigs, ExtraConfig{Kind: kind, Name: fmt.Sprintf("%s-%s", s.clusterInfo.Name, extraConfig.Name)})
 		}
@@ -239,11 +245,7 @@ func (s *Service) generateDefaultAppsData(ctx context.Context) (*DefaultAppsConf
 		}
 		var app App
 		for _, extraConfig := range extraConfigs {
-			kind := "configMap"
-			if strings.ToLower(extraConfig.Kind) == "secret" {
-				kind = "secret"
-			}
-			app.ExtraConfigs = append(app.ExtraConfigs, ExtraConfig{Kind: kind, Name: fmt.Sprintf("%s-%s", s.clusterInfo.Name, extraConfig.Name), Namespace: s.clusterInfo.Namespace})
+			app.ExtraConfigs = append(app.ExtraConfigs, ExtraConfig{Kind: extraConfig.Kind, Name: fmt.Sprintf("%s-%s", s.clusterInfo.Name, extraConfig.Name), Namespace: s.clusterInfo.Namespace})
 		}
 
 		appValues[appName] = app
