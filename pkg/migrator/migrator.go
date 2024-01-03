@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 	"time"
@@ -90,7 +91,7 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 	}
 
 	// migrate cluster AWS default apps values
-	err = s.migrateClusterAWSDefaultAppsValues(ctx)
+	err = s.migrateDefaultAppsValues(ctx)
 	if err != nil {
 		fmt.Printf("Failed to migrate cluster AWS default apps values.\n")
 		return microerror.Mask(err)
@@ -169,8 +170,8 @@ func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) migrateClusterAWSDefaultAppsValues(ctx context.Context) error {
-	for _, app := range ClusterAWSDefaultAppList {
+func (s *Service) migrateDefaultAppsValues(ctx context.Context) error {
+	for _, app := range append(ClusterAWSDefaultAppList, DefaultAppsAWSAppList...) {
 		extraConfigs, err := s.fetchVintageAppExtraConfigs(ctx, app)
 		if err != nil {
 			return microerror.Mask(err)
@@ -188,9 +189,12 @@ func (s *Service) migrateClusterAWSDefaultAppsValues(ctx context.Context) error 
 				secret.ResourceVersion = ""
 				secret.Namespace = s.clusterInfo.Namespace
 				err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, &secret)
-				if err != nil {
+				if apierrors.IsAlreadyExists(err) {
+					// It's fine. No worries.
+				} else if err != nil {
 					return microerror.Mask(err)
 				}
+				fmt.Printf("Migrated %s secret for app %s\n", secret.Name, app)
 
 			} else {
 				// anything else than secret we assume its configmap
@@ -204,9 +208,12 @@ func (s *Service) migrateClusterAWSDefaultAppsValues(ctx context.Context) error 
 				configmap.ResourceVersion = ""
 				configmap.Namespace = s.clusterInfo.Namespace
 				err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, &configmap)
-				if err != nil {
+				if apierrors.IsAlreadyExists(err) {
+					// It's fine. No worries.
+				} else if err != nil {
 					return microerror.Mask(err)
 				}
+				fmt.Printf("Migrated %s configmap for app %s\n", configmap.Name, app)
 			}
 		}
 	}

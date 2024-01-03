@@ -408,7 +408,6 @@ func fetchVintageClusterAccountRole(ctx context.Context, k8sClient client.Client
 
 func (s *Service) fetchVintageAppExtraConfigs(ctx context.Context, appName string) ([]ExtraConfig, error) {
 	var app chart.App
-
 	err := s.clusterInfo.MC.VintageKubernetesClient.Get(ctx, client.ObjectKey{Name: appName, Namespace: s.clusterInfo.Name}, &app)
 	if err != nil {
 		fmt.Printf("failed to fetch app %s: %s\n", appName, err.Error())
@@ -422,6 +421,10 @@ func (s *Service) fetchVintageAppExtraConfigs(ctx context.Context, appName strin
 
 	var extraConfigs []ExtraConfig
 	for _, config := range vintageExtraConfigs {
+		if appName == "external-dns" && config.Name == "external-dns-cluster-values" {
+			// special case, we want to ignore this configmap as it would override the domain which external dns use and did not create new dns records
+			continue
+		}
 		namespace := config.Namespace
 		if namespace == "" {
 			// default to cluster namespace
