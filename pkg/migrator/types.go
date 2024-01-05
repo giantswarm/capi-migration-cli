@@ -40,6 +40,7 @@ type Migration struct {
 	ControlPlanePreKubeadmCommands  []string          `yaml:"controlPlanePreKubeadmCommands"`
 	ControlPlanePostKubeadmCommands []string          `yaml:"controlPlanePostKubeadmCommands"`
 	EtcdExtraArgs                   map[string]string `yaml:"etcdExtraArgs"`
+	IrsaAdditionalDomain            string            `yaml:"irsaAdditionalDomain"`
 }
 
 type File struct {

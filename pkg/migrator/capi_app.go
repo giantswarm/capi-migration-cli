@@ -172,6 +172,7 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 					"initial-cluster":                                "$ETCD_INITIAL_CLUSTER",
 					"experimental-peer-skip-client-san-verification": "true",
 				},
+				IrsaAdditionalDomain: irsaEndpointFromDomain(s.vintageCRs.AwsCluster.Spec.Cluster.DNS.Domain, s.clusterInfo.Name),
 			},
 		},
 	}
@@ -405,4 +406,8 @@ func removeTemplateFileIfExists(filename string) error {
 	}
 
 	return nil
+}
+
+func irsaEndpointFromDomain(domain string, clusterName string) string {
+	return fmt.Sprintf("https://irsa.%s.k8s.%s", clusterName, domain)
 }
