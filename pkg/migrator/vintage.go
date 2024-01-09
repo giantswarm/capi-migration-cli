@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -403,6 +404,36 @@ func fetchVintageClusterAccountRole(ctx context.Context, k8sClient client.Client
 	}
 
 	return string(roleArn), nil
+}
+
+func (s *Service) fetchVintageAppExtraConfigs(ctx context.Context, appName string) ([]ExtraConfig, error) {
+	var app chart.App
+	err := s.clusterInfo.MC.VintageKubernetesClient.Get(ctx, client.ObjectKey{Name: appName, Namespace: s.clusterInfo.Name}, &app)
+	if err != nil {
+		fmt.Printf("failed to fetch app %s: %s\n", appName, err.Error())
+		return nil, microerror.Mask(err)
+	}
+	vintageExtraConfigs := app.Spec.ExtraConfigs
+
+	sort.Slice(vintageExtraConfigs, func(i, j int) bool {
+		return vintageExtraConfigs[i].Priority < vintageExtraConfigs[j].Priority
+	})
+
+	var extraConfigs []ExtraConfig
+	for _, config := range vintageExtraConfigs {
+		if appName == "external-dns" && config.Name == "external-dns-cluster-values" {
+			// special case, we want to ignore this configmap as it would override the domain which external dns use and did not create new dns records
+			continue
+		}
+		namespace := config.Namespace
+		if namespace == "" {
+			// default to cluster namespace
+			namespace = s.clusterInfo.Namespace
+		}
+		extraConfigs = append(extraConfigs, ExtraConfig{Name: config.Name, Kind: config.Kind, Namespace: namespace})
+	}
+
+	return extraConfigs, nil
 }
 
 func getClusterDescription(crs *VintageCRs) string {

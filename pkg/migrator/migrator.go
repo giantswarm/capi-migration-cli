@@ -3,6 +3,7 @@ package migrator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -12,6 +13,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/giantswarm/backoff"
 	"github.com/giantswarm/microerror"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/capi-migration-cli/cluster"
 )
@@ -86,6 +90,15 @@ func (s *Service) PrepareMigration(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	// migrate cluster AWS default apps values
+	err = s.migrateDefaultAppsValues(ctx)
+	if err != nil {
+		fmt.Printf("Failed to migrate cluster AWS default apps values.\n")
+		return microerror.Mask(err)
+	} else {
+		fmt.Printf("Successfully migrated cluster AWS default apps values.\n")
+	}
+
 	// migrate cluster account role
 	err = s.migrateClusterAccountRole(ctx)
 	if err != nil {
@@ -154,6 +167,56 @@ func (s *Service) migrateClusterAccountRole(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 
+	return nil
+}
+
+func (s *Service) migrateDefaultAppsValues(ctx context.Context) error {
+	for _, app := range append(ClusterAWSDefaultAppList, DefaultAppsAWSAppList...) {
+		extraConfigs, err := s.fetchVintageAppExtraConfigs(ctx, app)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		for _, extraConfig := range extraConfigs {
+			kind := strings.ToLower(extraConfig.Kind)
+			if kind == SecretKindLoverCase {
+				var secret corev1.Secret
+				err = s.clusterInfo.MC.VintageKubernetesClient.Get(ctx, ctrl.ObjectKey{Name: extraConfig.Name, Namespace: extraConfig.Namespace}, &secret)
+				if err != nil {
+					fmt.Printf("ERROR: cant find %s/%s secret in vintage cluster for app %s", extraConfig.Namespace, extraConfig.Name, app)
+					return microerror.Mask(err)
+				}
+				secret.Name = fmt.Sprintf("%s-%s", s.clusterInfo.Name, secret.Name)
+				secret.ResourceVersion = ""
+				secret.Namespace = s.clusterInfo.Namespace
+				err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, &secret)
+				if apierrors.IsAlreadyExists(err) {
+					// It's fine. No worries.
+				} else if err != nil {
+					return microerror.Mask(err)
+				}
+				fmt.Printf("Migrated %s secret for app %s\n", secret.Name, app)
+
+			} else {
+				// anything else than secret we assume its configmap
+				var configmap corev1.ConfigMap
+				err = s.clusterInfo.MC.VintageKubernetesClient.Get(ctx, ctrl.ObjectKey{Name: extraConfig.Name, Namespace: extraConfig.Namespace}, &configmap)
+				if err != nil {
+					fmt.Printf("ERROR: cant find %s/%s configmap in vintage cluster for app %s", extraConfig.Namespace, extraConfig.Name, app)
+					return microerror.Mask(err)
+				}
+				configmap.Name = fmt.Sprintf("%s-%s", s.clusterInfo.Name, configmap.Name)
+				configmap.ResourceVersion = ""
+				configmap.Namespace = s.clusterInfo.Namespace
+				err = s.clusterInfo.MC.CapiKubernetesClient.Create(ctx, &configmap)
+				if apierrors.IsAlreadyExists(err) {
+					// It's fine. No worries.
+				} else if err != nil {
+					return microerror.Mask(err)
+				}
+				fmt.Printf("Migrated %s configmap for app %s\n", configmap.Name, app)
+			}
+		}
+	}
 	return nil
 }
 

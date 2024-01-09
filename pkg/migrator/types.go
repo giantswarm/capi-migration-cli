@@ -8,6 +8,7 @@ type ClusterAppValuesData struct {
 type Global struct {
 	Metadata Metadata `yaml:"metadata"`
 
+	Apps             Apps                `yaml:"apps,omitempty"`
 	ControlPlane     ControlPlane        `yaml:"controlPlane"`
 	Connectivity     Connectivity        `yaml:"connectivity"`
 	NodePools        map[string]NodePool `yaml:"nodePools"`
@@ -102,4 +103,40 @@ type Subnet struct {
 	IsPublic     bool   `yaml:"isPublic"`
 	RouteTableID string `yaml:"routeTableId"`
 	NatGatewayID string `yaml:"natGatewayId,omitempty"`
+}
+
+type Apps struct {
+	AwsCloudControllerManager App `yaml:"awsCloudControllerManager,omitempty"`
+	AwsEbsCsiDriver           App `yaml:"awsEbsCsiDriver,omitempty"`
+	Cilium                    App `yaml:"cilium,omitempty"`
+	CoreDNS                   App `yaml:"coreDns,omitempty"`
+	// ignore vertical-pod-autoscaler-crd app as it is not present in the vintage and there is no real point to customise it anyway
+}
+
+type App struct {
+	ExtraConfigs []ExtraConfig `yaml:"extraConfigs,omitempty"`
+}
+
+type ExtraConfig struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace,omitempty"`
+	Kind      string `yaml:"kind"`
+}
+
+type DefaultAppsConfig struct {
+	ClusterName  string         `yaml:"clusterName,omitempty"`
+	Organization string         `yaml:"organization,omitempty"`
+	Apps         AppExtraConfig `yaml:"apps,omitempty"`
+}
+
+type AppExtraConfig struct {
+	AwsPodIdentityWebhook App `yaml:"aws-pod-identity-webhook,omitempty"`
+	CertExporter          App `yaml:"certExporter,omitempty"`
+	CertManager           App `yaml:"certManager,omitempty"`
+	ClusterAutoscaler     App `yaml:"cluster-autoscaler,omitempty"`
+	ExternalDns           App `yaml:"externalDns,omitempty"`
+	MetricsServer         App `yaml:"metricsServer,omitempty"`
+	NetExporter           App `yaml:"netExporter,omitempty"`
+	NodeExporter          App `yaml:"nodeExporter,omitempty"`
+	VPA                   App `yaml:"vpa,omitempty"`
 }

@@ -8,7 +8,6 @@ import (
 	"text/template"
 
 	k8smetadata "github.com/giantswarm/k8smetadata/pkg/label"
-	"github.com/giantswarm/kubectl-gs/v2/cmd/template/cluster/provider/templates/capa"
 	templateapp "github.com/giantswarm/kubectl-gs/v2/pkg/template/app"
 	"github.com/giantswarm/microerror"
 	"gopkg.in/yaml.v3"
@@ -18,14 +17,22 @@ import (
 )
 
 const (
-	ClusterAppVersion  = "0.50.0"
+	ClusterAppVersion  = "0.54.0"
 	ClusterAppCatalog  = "cluster"
-	DefaultAppsVersion = "0.34.0"
+	DefaultAppsVersion = "0.40.0"
 	DefaultAppsCatalog = "cluster"
 
 	DefaultAppsAWSRepoName = "default-apps-aws"
 	ClusterAWSRepoName     = "cluster-aws"
+
+	SecretKindLoverCase    = "secret"
+	SecretKindUpperCase    = "Secret"
+	ConfigMapKindLoverCase = "configmap"
+	ConfigMapKindUpperCase = "ConfigMap"
 )
+
+var ClusterAWSDefaultAppList = []string{"cilium", "aws-ebs-csi-driver", "aws-cloud-controller-manager", "coredns"}
+var DefaultAppsAWSAppList = []string{"aws-pod-identity-webhook", "cert-exporter", "cert-manager", "cluster-autoscaler", "external-dns", "metrics-server", "net-exporter", "node-exporter", "vertical-pod-autoscaler"}
 
 func (s *Service) GenerateCAPIClusterTemplates(ctx context.Context) error {
 	// remove file if it already exists
@@ -41,7 +48,7 @@ func (s *Service) GenerateCAPIClusterTemplates(ctx context.Context) error {
 	}
 	fmt.Printf("Generated CAPI cluster template manifest for cluster %s\n", s.clusterInfo.Name)
 
-	err = s.templateDefaultAppsAWS()
+	err = s.templateDefaultAppsAWS(ctx)
 	if err != nil {
 		fmt.Printf("Failed to generate CAPI default-apps template manifest for cluster %s\n", s.clusterInfo.Name)
 		return microerror.Mask(err)
@@ -177,6 +184,30 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		},
 	}
 
+	// add apps
+	appValues := map[string]App{}
+	for _, appName := range ClusterAWSDefaultAppList {
+		extraConfigs, err := s.fetchVintageAppExtraConfigs(ctx, appName)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		var app App
+		for _, extraConfig := range extraConfigs {
+			// HelmRelease CR use different case for kind and our App CR
+			kind := ConfigMapKindUpperCase
+			if strings.ToLower(extraConfig.Kind) == SecretKindLoverCase {
+				kind = SecretKindUpperCase
+			}
+			app.ExtraConfigs = append(app.ExtraConfigs, ExtraConfig{Kind: kind, Name: fmt.Sprintf("%s-%s", s.clusterInfo.Name, extraConfig.Name)})
+		}
+
+		appValues[appName] = app
+	}
+	data.Global.Apps.Cilium = appValues["cilium"]
+	data.Global.Apps.AwsEbsCsiDriver = appValues["aws-ebs-csi-driver"]
+	data.Global.Apps.AwsCloudControllerManager = appValues["aws-cloud-controller-manager"]
+	data.Global.Apps.CoreDNS = appValues["coredns"]
+
 	data.Global.NodePools = make(map[string]NodePool)
 	for _, mp := range s.vintageCRs.AwsMachineDeployments {
 		id, err := s.getWorkerSecurityGroupID(mp.Name)
@@ -203,6 +234,40 @@ func (s *Service) generateClusterConfigData(ctx context.Context) (*ClusterAppVal
 		}
 	}
 
+	return data, nil
+}
+
+func (s *Service) generateDefaultAppsData(ctx context.Context) (*DefaultAppsConfig, error) {
+	appValues := map[string]App{}
+	for _, appName := range DefaultAppsAWSAppList {
+		extraConfigs, err := s.fetchVintageAppExtraConfigs(ctx, appName)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		var app App
+		for _, extraConfig := range extraConfigs {
+			app.ExtraConfigs = append(app.ExtraConfigs, ExtraConfig{Kind: extraConfig.Kind, Name: fmt.Sprintf("%s-%s", s.clusterInfo.Name, extraConfig.Name), Namespace: s.clusterInfo.Namespace})
+		}
+
+		appValues[appName] = app
+	}
+	apps := AppExtraConfig{
+		AwsPodIdentityWebhook: appValues["aws-pod-identity-webhook"],
+		CertExporter:          appValues["cert-exporter"],
+		CertManager:           appValues["cert-manager"],
+		ClusterAutoscaler:     appValues["cluster-autoscaler"],
+		ExternalDns:           appValues["external-dns"],
+		MetricsServer:         appValues["metrics-server"],
+		NetExporter:           appValues["net-exporter"],
+		NodeExporter:          appValues["node-exporter"],
+		VPA:                   appValues["vertical-pod-autoscaler"],
+	}
+
+	data := &DefaultAppsConfig{
+		ClusterName:  s.clusterInfo.Name,
+		Organization: organizationFromNamespace(s.clusterInfo.Namespace),
+		Apps:         apps,
+	}
 	return data, nil
 }
 
@@ -276,18 +341,18 @@ func (s *Service) templateClusterAWS(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) templateDefaultAppsAWS() error {
+func (s *Service) templateDefaultAppsAWS(ctx context.Context) error {
 	appName := fmt.Sprintf("%s-default-apps", s.clusterInfo.Name)
 	configMapName := fmt.Sprintf("%s-userconfig", appName)
 
 	var configMapYAML []byte
 	{
-		flagValues := capa.DefaultAppsConfig{
-			ClusterName:  s.clusterInfo.Name,
-			Organization: organizationFromNamespace(s.clusterInfo.Namespace),
-		}
 
-		configData, err := capa.GenerateDefaultAppsValues(flagValues)
+		data, err := s.generateDefaultAppsData(ctx)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		appsConfigData, err := yaml.Marshal(data)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -295,7 +360,7 @@ func (s *Service) templateDefaultAppsAWS() error {
 		userConfigMap, err := templateapp.NewConfigMap(templateapp.UserConfig{
 			Name:      configMapName,
 			Namespace: s.clusterInfo.Namespace,
-			Data:      configData,
+			Data:      string(appsConfigData),
 		})
 		if err != nil {
 			return microerror.Mask(err)
